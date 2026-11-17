@@ -3,6 +3,8 @@ name = "socialposter"
 version = "0.3.0"
 description = "SocialPoster"
 authors = ["AFuxy"]
+repository = "https://github.com/socialposter-dev/socialposter"
+homepage = "https://github.com/socialposter-dev/socialposter"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

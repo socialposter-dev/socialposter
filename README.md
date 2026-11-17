@@ -29,15 +29,15 @@ A desktop application for posting text and media to multiple social networks at 
 
 ### Pre-Built Installers
 
-Download the latest installer for Windows (`.exe` / `.msi`), macOS (`.dmg`), or Linux (`.AppImage` / `.deb`) from the [Releases](https://github.com/AFuxy/SocialPoster/releases) page.
+Download the latest installer for Windows (`.exe` / `.msi`), macOS (`.dmg`), or Linux (`.AppImage` / `.deb`) from the [Releases](https://github.com/socialposter-dev/socialposter/releases) page.
 
 ### Build from Source
 
 Prerequisites: [Rust](https://www.rust-lang.org/tools/install) and [Node.js](https://nodejs.org/).
 
 ```bash
-git clone https://github.com/AFuxy/SocialPoster.git
-cd SocialPoster
+git clone https://github.com/socialposter-dev/socialposter.git
+cd socialposter
 npm install
 npm run tauri dev
 ```

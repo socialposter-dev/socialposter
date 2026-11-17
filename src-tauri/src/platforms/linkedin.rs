@@ -100,7 +100,7 @@ impl SocialPlatform for LinkedInPlatform {
             name: "SocialPoster Developers",
             links: vec![AuthorLink {
                 label: "GitHub",
-                url: "https://github.com/afuxy/socialposter",
+                url: "https://github.com/socialposter-dev/socialposter",
             }],
         }]
     }
