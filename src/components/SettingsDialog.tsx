@@ -3,6 +3,8 @@ import Markdown from "react-markdown";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   AlertTriangle,
+  BadgeCheck,
+  Check,
   CheckCircle2,
   ExternalLink,
   Eye,
@@ -11,6 +13,7 @@ import {
   Loader2,
   ShieldCheck,
   Unlink,
+  X,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -18,13 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   saveCredentials,
   startPlatformOauth,
@@ -58,6 +61,7 @@ export function SettingsDialog({
   const [isAuthorising, setIsAuthorising] = useState(false);
   const [isUnlinking, setIsUnlinking] = useState(false);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
+  const [localUnlinked, setLocalUnlinked] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState<{
     ok: boolean;
     message: string;
@@ -71,8 +75,15 @@ export function SettingsDialog({
     setValues({});
     setRevealed({});
     setConfirmUnlink(false);
+    setLocalUnlinked(false);
     setVerifyStatus(null);
   }, [platform, open]);
+
+  useEffect(() => {
+    if (!confirmUnlink) return;
+    const timer = window.setTimeout(() => setConfirmUnlink(false), 4000);
+    return () => window.clearTimeout(timer);
+  }, [confirmUnlink]);
 
   const activeMode = useMemo(() => {
     if (!platform) return null;
@@ -119,7 +130,11 @@ export function SettingsDialog({
     setIsSaving(true);
     setVerifyStatus(null);
     try {
-      await saveCredentials(profileId, platform.id, activeMode.id, values);
+      await saveCredentials(profileId, platform.id, activeMode.id, {
+        ...values,
+        __auth_mode: activeMode.id,
+      });
+      setLocalUnlinked(false);
       await onSaved();
       toast.success(`Saved credentials for ${platform.name}.`);
     } catch (err) {
@@ -136,7 +151,10 @@ export function SettingsDialog({
     try {
       const hasAnyInput = Object.values(values).some((v) => v.trim().length > 0);
       if (hasAnyInput) {
-        await saveCredentials(profileId, platform.id, activeMode.id, values);
+        await saveCredentials(profileId, platform.id, activeMode.id, {
+          ...values,
+          __auth_mode: activeMode.id,
+        });
         await onSaved();
       }
       await verifyPlatform(profileId, platform.id);
@@ -185,47 +203,85 @@ export function SettingsDialog({
     setVerifyStatus(null);
     try {
       await unlinkPlatform(profileId, platform.id);
+      setLocalUnlinked(true);
       setValues({});
       setRevealed({});
       setConfirmUnlink(false);
+      setSelectedModeId(platform.authModes[0]?.id ?? "default");
       onUnlinked(platform.id);
       await onSaved();
       toast.success(`Unlinked ${platform.name} credentials.`);
     } catch (err) {
-      toast.error(`Failed to unlink ${platform.name}: ${String(err)}`);
+      const message = `Failed to unlink ${platform.name}: ${String(err)}`;
+      setVerifyStatus({ ok: false, message });
+      toast.error(message);
     } finally {
       setIsUnlinking(false);
     }
   };
 
   const isBusy = isSaving || isVerifying || isAuthorising || isUnlinking;
+  const effectiveIsConfigured = platform.isConfigured && !localUnlinked;
   const isIncompatible = !platform.isCompatible;
   const instructionsMarkdown =
     activeMode?.setupInstructions ?? platform.setupInstructions;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl gap-0 overflow-hidden p-0 sm:max-w-4xl">
-        <DialogHeader className="border-b px-6 py-4">
-          <div className="flex flex-wrap items-center gap-2.5 pr-6">
-            <span
-              className="size-3 rounded-full"
-              style={{ backgroundColor: platform.accentColour }}
-            />
-            <DialogTitle>{platform.name}</DialogTitle>
-            <Badge
-              variant={platform.isConfigured ? "secondary" : "outline"}
-              className="text-xs"
-            >
-              {platform.isConfigured ? "Configured" : "Not configured"}
-            </Badge>
-            <Badge
-              variant="outline"
-              className="ml-auto text-[11px] font-normal text-muted-foreground"
-            >
-              v{platform.version} • Requires SocialPoster{" "}
-              {platform.compatibleAppVersion}
-            </Badge>
+      <DialogContent
+        showCloseButton={false}
+        className="flex max-h-[85vh] w-full max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
+      >
+        <DialogHeader className="shrink-0 border-b px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span
+                className="size-3 rounded-full"
+                style={{ backgroundColor: platform.accentColour }}
+              />
+              <DialogTitle>{platform.name}</DialogTitle>
+              <Badge
+                variant={effectiveIsConfigured ? "secondary" : "outline"}
+                className="text-xs"
+              >
+                {effectiveIsConfigured ? "Configured" : "Not configured"}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge
+                variant="outline"
+                className="text-[11px] font-normal text-muted-foreground"
+              >
+                v{platform.version} • {platform.compatibleAppVersion}
+              </Badge>
+              {platform.isCompatible ? (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-emerald-500/30 bg-emerald-500/10 text-[11px] font-normal text-emerald-700 dark:text-emerald-300"
+                >
+                  <Check className="size-3" />
+                  Compatible with v{platform.appVersion}
+                </Badge>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-500/30 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                >
+                  <AlertTriangle className="size-3" />
+                  Incompatible with v{platform.appVersion}
+                </Badge>
+              )}
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
           </div>
         </DialogHeader>
 
@@ -245,8 +301,9 @@ export function SettingsDialog({
           </div>
         )}
 
-        <div className="grid grid-cols-1 divide-y md:grid-cols-2 md:divide-x md:divide-y-0">
-          {/* Left column: mode selector + dynamic authFields form */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="grid grid-cols-1 items-stretch divide-y divide-zinc-800 md:grid-cols-2 md:divide-x md:divide-y-0">
+            {/* Left column: mode selector + dynamic authFields form */}
           <form onSubmit={handleSave} className="flex flex-col gap-4 p-6">
             {platform.authModes.length > 1 && (
               <div className="space-y-1.5">
@@ -382,7 +439,7 @@ export function SettingsDialog({
                               : "text"
                         }
                         placeholder={
-                          platform.isConfigured
+                          effectiveIsConfigured
                             ? "•••••••• (leave blank to keep existing, or enter new)"
                             : field.placeholder
                         }
@@ -472,34 +529,42 @@ export function SettingsDialog({
             <h3 className="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
               Setup Guide
             </h3>
-            <ScrollArea className="h-[320px] pr-3">
-              <div className="prose prose-sm dark:prose-invert max-w-none space-y-3 text-sm leading-relaxed [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs [&_h3]:text-base [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
-                <Markdown
-                  components={{
-                    a: ({ href, children }) => (
-                      <a
-                        href={href}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          void handleExternalLink(href);
-                        }}
-                        className="inline-flex cursor-pointer items-center gap-1 font-medium text-primary underline underline-offset-4 hover:opacity-80"
-                      >
-                        <span>{children}</span>
-                        <ExternalLink className="size-3" />
-                      </a>
-                    ),
-                  }}
-                >
-                  {instructionsMarkdown}
-                </Markdown>
-              </div>
-            </ScrollArea>
+            <div className="max-w-none space-y-3 text-sm leading-relaxed text-foreground/90 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs [&_h1]:text-base [&_h1]:font-semibold [&_h1]:text-foreground [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-foreground [&_h4]:text-xs [&_h4]:font-semibold [&_h4]:text-foreground [&_li]:leading-relaxed [&_ol]:list-decimal [&_ol]:space-y-1.5 [&_ol]:pl-5 [&_p]:leading-relaxed [&_strong]:font-semibold [&_strong]:text-foreground [&_ul]:list-disc [&_ul]:space-y-1.5 [&_ul]:pl-5">
+              <Markdown
+                components={{
+                  a: ({ href, children }) => (
+                    <a
+                      href={href}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        void handleExternalLink(href);
+                      }}
+                      className="inline-flex cursor-pointer items-center gap-1 font-medium text-primary underline underline-offset-4 hover:opacity-80"
+                    >
+                      <span>{children}</span>
+                      <ExternalLink className="size-3" />
+                    </a>
+                  ),
+                }}
+              >
+                {instructionsMarkdown}
+              </Markdown>
+            </div>
+          </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-6 py-3.5">
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t bg-muted/40 px-6 py-3.5">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            {platform.isOfficial && (
+              <Badge
+                variant="outline"
+                className="gap-1 border-indigo-500/30 bg-indigo-500/10 text-[11px] font-medium text-indigo-600 dark:text-indigo-300"
+              >
+                <BadgeCheck className="size-3" />
+                Official integration
+              </Badge>
+            )}
             {platform.authors.length > 0 ? (
               <>
                 <span>Ported by</span>
@@ -528,13 +593,13 @@ export function SettingsDialog({
                   </span>
                 ))}
               </>
-            ) : (
+            ) : !platform.isOfficial ? (
               <span>Community integration</span>
-            )}
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2">
-            {platform.isConfigured && (
+            {effectiveIsConfigured && (
               <Button
                 type="button"
                 variant="destructive"
@@ -547,7 +612,7 @@ export function SettingsDialog({
                 ) : (
                   <Unlink className="mr-1.5 size-3.5" />
                 )}
-                {confirmUnlink ? "Confirm Unlink?" : "Unlink"}
+                {confirmUnlink ? "Confirm Unlink" : "Unlink"}
               </Button>
             )}
             <Button

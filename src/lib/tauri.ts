@@ -62,7 +62,9 @@ export interface PlatformMetadata {
   name: string;
   accentColour: string;
   version: string;
+  appVersion: string;
   compatibleAppVersion: string;
+  isOfficial?: boolean;
   isCompatible: boolean;
   compatibilityError: string | null;
   authors: PlatformAuthor[];
@@ -342,6 +344,32 @@ export interface BackupMetadata {
   version: number;
 }
 
+export interface BackupRestorePluginItem {
+  pluginId: string;
+  displayName: string;
+  requiredVersion: string | null;
+  installedVersion: string | null;
+  targetVersion: string | null;
+  iconSvg: string | null;
+  brandColour: string;
+  isOfficial: boolean;
+  verified: boolean;
+  versionDiffers: boolean;
+  reason: string | null;
+}
+
+export interface BackupRestorePreview {
+  profileName: string;
+  backupAppVersion: string | null;
+  currentAppVersion: string;
+  isOlderVersion: boolean;
+  isNewerVersion: boolean;
+  versionWarning: string | null;
+  alreadyInstalled: BackupRestorePluginItem[];
+  missingAvailable: BackupRestorePluginItem[];
+  missingUnavailable: BackupRestorePluginItem[];
+}
+
 export interface ImportedProfileResponse {
   profile: ProfileInfo;
   frontendState: Record<string, string>;
@@ -369,6 +397,16 @@ export async function inspectProfileBackup(
   return invoke<BackupMetadata>("inspect_profile_backup", { filePath });
 }
 
+export async function previewBackupRestore(
+  filePath: string,
+  passphrase: string,
+): Promise<BackupRestorePreview> {
+  return invoke<BackupRestorePreview>("preview_backup_restore", {
+    filePath,
+    passphrase,
+  });
+}
+
 export async function importProfileBackup(
   filePath: string,
   passphrase: string,
@@ -379,4 +417,147 @@ export async function importProfileBackup(
     passphrase,
     customName,
   });
+}
+
+export interface RegistryPluginView {
+  id: string;
+  name: string;
+  description: string | null;
+  latestVersion: string | null;
+  installedVersion: string | null;
+  isInstalled: boolean;
+  updateAvailable: boolean;
+  enabled: boolean;
+  verified: boolean;
+  isOfficial?: boolean;
+  source: string;
+  brandColour: string;
+  iconSvg: string | null;
+  allowedDomains: string[];
+  authors: string[];
+  updatedAt?: string | null;
+  appVersion: string;
+  compatibleAppVersion: string;
+  isCompatible: boolean;
+  compatibilityError?: string | null;
+}
+
+export interface RegistryAuthor {
+  slug?: string | null;
+  display_name: string;
+  url?: string | null;
+  avatar_url?: string | null;
+  is_official: boolean;
+}
+
+export interface PluginVersionEntry {
+  version: string;
+  download_url: string;
+  sha256: string;
+  ed25519_signature?: string | null;
+  file_size_bytes?: number | null;
+  release_notes?: string | null;
+  published_at?: string | null;
+  compatible_app_version?: string | null;
+  is_compatible?: boolean;
+  compatibility_message?: string | null;
+}
+
+export interface ManifestCredentialField {
+  key: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  kind?: string | null;
+  placeholder?: string | null;
+  help_text?: string | null;
+}
+
+export interface ManifestCapabilities {
+  max_characters?: number | null;
+  max_attachments?: number | null;
+  supported_media_types: string[];
+  supports_alt_text: boolean;
+  supports_threads: boolean;
+  supports_delete: boolean;
+  allowed_domains: string[];
+  credential_fields: ManifestCredentialField[];
+}
+
+export interface PluginManifestDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  author: RegistryAuthor | null;
+  isOfficial?: boolean;
+  brandColour: string;
+  iconSvg: string | null;
+  setupInstructions: string | null;
+  appVersion: string;
+  compatibleAppVersion: string;
+  isCompatible: boolean;
+  compatibilityError?: string | null;
+  latestVersion: string;
+  installedVersion: string | null;
+  isInstalled: boolean;
+  updateAvailable: boolean;
+  enabled: boolean;
+  verified: boolean;
+  allowedDomains: string[];
+  capabilities: ManifestCapabilities;
+  versions: PluginVersionEntry[];
+  hubUrl: string;
+}
+
+export async function getPluginManifest(
+  pluginId: string,
+): Promise<PluginManifestDetail> {
+  return invoke<PluginManifestDetail>("get_plugin_manifest", { pluginId });
+}
+
+export interface InstalledPluginRecord {
+  id: string;
+  name: string;
+  version: string;
+  wasmPath: string;
+  enabled: boolean;
+  verified: boolean;
+  isOfficial?: boolean;
+  source: string;
+  sha256: string;
+  installedAt: string;
+  allowedDomains: string[];
+  brandColour: string | null;
+  iconSvg: string | null;
+}
+
+export async function getRegistryPlugins(): Promise<RegistryPluginView[]> {
+  return invoke<RegistryPluginView[]>("get_registry_plugins");
+}
+
+export async function installRegistryPlugin(
+  pluginId: string,
+  version?: string | null,
+): Promise<InstalledPluginRecord> {
+  return invoke<InstalledPluginRecord>("install_registry_plugin", {
+    pluginId,
+    version: version ?? null,
+  });
+}
+
+export async function installLocalPlugin(
+  filePath: string,
+): Promise<InstalledPluginRecord> {
+  return invoke<InstalledPluginRecord>("install_local_plugin", { filePath });
+}
+
+export async function setPluginEnabled(
+  pluginId: string,
+  enabled: boolean,
+): Promise<void> {
+  return invoke<void>("set_plugin_enabled", { pluginId, enabled });
+}
+
+export async function uninstallPlugin(pluginId: string): Promise<void> {
+  return invoke<void>("uninstall_plugin", { pluginId });
 }

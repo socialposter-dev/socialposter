@@ -9,6 +9,7 @@ import {
   Loader2,
   RotateCcw,
   Trash2,
+  X,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -85,10 +87,11 @@ export function HistorySheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
+        showCloseButton={false}
         className="flex w-full max-w-md flex-col gap-0 overflow-x-hidden p-0 sm:max-w-lg"
       >
-        <SheetHeader className="border-b px-5 py-4 pr-12">
-          <div className="flex items-center justify-between gap-2">
+        <SheetHeader className="border-b px-5 py-4">
+          <div className="flex items-center justify-between gap-4">
             <SheetTitle className="flex items-center gap-2 text-base">
               <History className="size-4 text-primary" />
               <span>Post History</span>
@@ -97,18 +100,30 @@ export function HistorySheet({
               </Badge>
             </SheetTitle>
 
-            {entries.length > 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                onClick={onClearHistory}
-              >
-                <Trash2 className="mr-1 size-3.5" />
-                Clear History
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {entries.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={onClearHistory}
+                >
+                  <Trash2 className="mr-1 size-3.5" />
+                  Clear History
+                </Button>
+              )}
+              <SheetClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </SheetClose>
+            </div>
           </div>
         </SheetHeader>
 

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -230,15 +231,32 @@ export function QueueDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full min-w-0 max-w-xl gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent
+        showCloseButton={false}
+        className="w-full min-w-0 max-w-xl gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
         <DialogHeader className="border-b border-border/60 p-5">
-          <DialogTitle className="flex items-center gap-2 text-base">
-            <Clock className="size-4 text-primary" />
-            <span>Scheduled Queue</span>
-            <Badge variant="secondary" className="text-xs font-normal">
-              {posts.length}
-            </Badge>
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-4">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Clock className="size-4 text-primary" />
+              <span>Scheduled Queue</span>
+              <Badge variant="secondary" className="text-xs font-normal">
+                {posts.length}
+              </Badge>
+            </DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
+          </div>
         </DialogHeader>
 
         <div className="w-full min-w-0 overflow-hidden p-5">

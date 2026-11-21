@@ -13,6 +13,7 @@ interface PlatformBarProps {
   onSelectAll: () => void;
   onClearAll: () => void;
   onOpenSettings: (platform: PlatformMetadata) => void;
+  onOpenPlugins?: () => void;
 }
 
 export function PlatformBar({
@@ -22,6 +23,7 @@ export function PlatformBar({
   onSelectAll,
   onClearAll,
   onOpenSettings,
+  onOpenPlugins,
 }: PlatformBarProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -85,9 +87,23 @@ export function PlatformBar({
       </div>
 
       {platforms.length === 0 ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          No platforms available.
-        </p>
+        <div className="flex flex-col items-center gap-2 py-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            No platforms installed. Open Plugins in the top bar to install a
+            platform.
+          </p>
+          {onOpenPlugins && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={onOpenPlugins}
+            >
+              Open Plugins
+            </Button>
+          )}
+        </div>
       ) : visiblePlatforms.length === 0 ? (
         <p className="py-4 text-center text-xs text-muted-foreground">
           No matching platforms.

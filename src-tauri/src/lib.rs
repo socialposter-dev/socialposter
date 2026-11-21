@@ -1,6 +1,6 @@
 pub mod commands;
 pub mod core;
-pub mod platforms;
+pub mod plugins;
 
 use core::desktop::{self, DesktopSettingsState};
 use core::profiles::{self, ProfileSessionState};
@@ -16,6 +16,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             let _ = profiles::ensure_initialized(handle);
+            if let Err(err) = plugins::reload_installed_plugins(handle) {
+                eprintln!("Warning: {err}");
+            }
 
             let settings = desktop::load_settings(handle);
             if let Ok(mut guard) = app.state::<DesktopSettingsState>().0.lock() {
@@ -83,7 +86,14 @@ pub fn run() {
             commands::retry_scheduled_post,
             commands::export_profile_backup,
             commands::inspect_profile_backup,
+            commands::preview_backup_restore,
             commands::import_profile_backup,
+            plugins::get_registry_plugins,
+            plugins::get_plugin_manifest,
+            plugins::install_registry_plugin,
+            plugins::install_local_plugin,
+            plugins::set_plugin_enabled,
+            plugins::uninstall_plugin,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

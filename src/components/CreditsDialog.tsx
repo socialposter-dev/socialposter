@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   RotateCw,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppLogo } from "@/components/AppLogo";
@@ -15,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -160,12 +162,24 @@ export function CreditsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2.5">
-            <AppLogo className="h-8 w-8 shrink-0" />
-            <span>Credits</span>
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-4">
+            <DialogTitle className="flex items-center gap-2.5">
+              <AppLogo className="h-8 w-8 shrink-0" />
+              <span>Credits</span>
+            </DialogTitle>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </Button>
+            </DialogClose>
+          </div>
           <DialogDescription>
             Platform integrations maintained by:
           </DialogDescription>

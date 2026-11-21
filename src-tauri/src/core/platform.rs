@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -8,22 +9,22 @@ pub const AUTH_KEYS_RESERVED: [&str; 3] = ["access_token", "refresh_token", "exp
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorLink {
-    pub label: &'static str,
-    pub url: &'static str,
+    pub label: Cow<'static, str>,
+    pub url: Cow<'static, str>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformAuthor {
-    pub name: &'static str,
+    pub name: Cow<'static, str>,
     pub links: Vec<AuthorLink>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SelectOption {
-    pub value: &'static str,
-    pub label: &'static str,
+    pub value: Cow<'static, str>,
+    pub label: Cow<'static, str>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,30 +37,30 @@ pub enum FieldKind {
         options: Vec<SelectOption>,
     },
     OAuthButton {
-        button_label: &'static str,
-        target_key: &'static str,
+        button_label: Cow<'static, str>,
+        target_key: Cow<'static, str>,
     },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthField {
-    pub key: &'static str,
-    pub label: &'static str,
-    pub placeholder: &'static str,
+    pub key: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub placeholder: Cow<'static, str>,
     pub kind: FieldKind,
     pub required: bool,
-    pub help_text: Option<&'static str>,
+    pub help_text: Option<Cow<'static, str>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthMode {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub description: Option<&'static str>,
+    pub id: Cow<'static, str>,
+    pub label: Cow<'static, str>,
+    pub description: Option<Cow<'static, str>>,
     pub fields: Vec<AuthField>,
-    pub setup_instructions: Option<&'static str>,
+    pub setup_instructions: Option<Cow<'static, str>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -80,17 +81,19 @@ pub struct PlatformCapabilities {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformMetadata {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub accent_colour: &'static str,
-    pub version: &'static str,
-    pub compatible_app_version: &'static str,
+    pub id: String,
+    pub name: String,
+    pub accent_colour: String,
+    pub version: String,
+    pub app_version: String,
+    pub compatible_app_version: String,
     pub is_compatible: bool,
     pub compatibility_error: Option<String>,
+    pub is_official: bool,
     pub authors: Vec<PlatformAuthor>,
     pub auth_modes: Vec<AuthMode>,
     pub active_auth_mode: Option<String>,
-    pub setup_instructions: &'static str,
+    pub setup_instructions: String,
     pub capabilities: PlatformCapabilities,
     pub is_configured: bool,
 }
@@ -154,18 +157,21 @@ pub struct PostOutcome {
 
 #[async_trait]
 pub trait SocialPlatform: Send + Sync + 'static {
-    fn id(&self) -> &'static str;
-    fn name(&self) -> &'static str;
-    fn accent_colour(&self) -> &'static str {
+    fn id(&self) -> &str;
+    fn name(&self) -> &str;
+    fn accent_colour(&self) -> &str {
         "#64748B"
     }
     /// Semantic version of this platform plugin (e.g., "0.1.0")
-    fn version(&self) -> &'static str {
+    fn version(&self) -> &str {
         "0.1.0"
     }
-    /// SemVer requirement for compatible SocialPoster host versions (e.g., "^0.1.0")
-    fn compatible_app_version(&self) -> &'static str {
-        "^0.1.0"
+    /// SemVer requirement for compatible SocialPoster host versions (e.g., "^1.0.0")
+    fn compatible_app_version(&self) -> &str {
+        ">=1.0.0"
+    }
+    fn is_official(&self) -> bool {
+        false
     }
     fn authors(&self) -> Vec<PlatformAuthor> {
         vec![]
@@ -175,14 +181,14 @@ pub trait SocialPlatform: Send + Sync + 'static {
     }
     fn auth_modes(&self) -> Vec<AuthMode> {
         vec![AuthMode {
-            id: "default",
-            label: "Default",
+            id: Cow::Borrowed("default"),
+            label: Cow::Borrowed("Default"),
             description: None,
             fields: self.auth_fields(),
             setup_instructions: None,
         }]
     }
-    fn setup_instructions(&self) -> &'static str;
+    fn setup_instructions(&self) -> &str;
     fn capabilities(&self) -> PlatformCapabilities;
 
     async fn verify_credentials(&self, _creds: &HashMap<String, String>) -> Result<(), String> {
@@ -211,15 +217,3 @@ pub trait SocialPlatform: Send + Sync + 'static {
         Err("Post deletion is not supported by this platform.".into())
     }
 }
-
-pub struct PlatformEntry {
-    pub factory: fn() -> Box<dyn SocialPlatform>,
-}
-
-impl PlatformEntry {
-    pub const fn new(factory: fn() -> Box<dyn SocialPlatform>) -> Self {
-        Self { factory }
-    }
-}
-
-inventory::collect!(PlatformEntry);

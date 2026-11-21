@@ -1,4 +1,7 @@
-use crate::core::backup::{self, BackupMetadata, BackupPayload, ImportedProfileResponse};
+use crate::core::backup::{
+    self, BackupMetadata, BackupPayload, BackupPluginRequirement, BackupRestorePluginItem,
+    BackupRestorePreview, ImportedProfileResponse,
+};
 use crate::core::desktop::{self, DesktopSettings, DesktopSettingsState};
 use crate::core::dispatcher::{self, PlatformDispatchRequest};
 use crate::core::history::{self, HistoryEntry};
@@ -163,17 +166,22 @@ pub async fn save_credentials(
             .find(|m| m.id == mode_id)
             .ok_or_else(|| format!("Unknown authentication mode '{mode_id}'."))?;
 
-        vault::save_secret(&profile_id, platform.id(), vault::AUTH_MODE_KEY, mode.id)?;
+        vault::save_secret(
+            &profile_id,
+            platform.id(),
+            vault::AUTH_MODE_KEY,
+            mode.id.as_ref(),
+        )?;
 
         for field in &mode.fields {
             if matches!(field.kind, FieldKind::OAuthButton { .. }) {
                 continue;
             }
-            if let Some(value) = values.get(field.key) {
+            if let Some(value) = values.get(field.key.as_ref()) {
                 if value.trim().is_empty() {
-                    vault::delete_secret(&profile_id, platform.id(), field.key)?;
+                    vault::delete_secret(&profile_id, platform.id(), field.key.as_ref())?;
                 } else {
-                    vault::save_secret(&profile_id, platform.id(), field.key, value)?;
+                    vault::save_secret(&profile_id, platform.id(), field.key.as_ref(), value)?;
                 }
             }
         }
@@ -218,10 +226,13 @@ pub async fn unlink_platform(
     profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
 
     tokio::task::spawn_blocking(move || {
-        let platform = registry::find_platform(&platform_id)
-            .ok_or_else(|| format!("Unknown platform '{platform_id}'."))?;
+        // Decouple unlinking from active/loaded plugins so orphaned or legacy credentials
+        // (such as "discord" from an older build) can always be wiped cleanly.
+        let auth_modes = registry::find_platform(&platform_id)
+            .map(|platform| platform.auth_modes())
+            .unwrap_or_default();
 
-        vault::wipe_profile_platform_secrets(&profile_id, platform.id(), &platform.auth_modes())
+        vault::wipe_profile_platform_secrets(&profile_id, &platform_id, &auth_modes)
     })
     .await
     .map_err(|err| format!("Failed to unlink platform: {err}"))?
@@ -577,17 +588,35 @@ pub async fn export_profile_backup(
         let mut creds =
             vault::load_platform_credentials(&profile_id, platform.id(), &platform.auth_modes())?;
         creds.remove(vault::PROFILE_ID_KEY);
-        if !creds.is_empty() {
+        let has_real_creds = creds
+            .iter()
+            .any(|(k, v)| k != vault::AUTH_MODE_KEY && !v.trim().is_empty());
+        if has_real_creds {
             credentials.insert(platform.id().to_string(), creds);
         }
     }
 
+    let installed_records =
+        crate::plugins::registry::load_installed_records(&app).unwrap_or_default();
+    let required_plugins: Vec<BackupPluginRequirement> = installed_records
+        .into_iter()
+        .filter(|rec| credentials.contains_key(&rec.id))
+        .map(|rec| BackupPluginRequirement {
+            plugin_id: rec.id,
+            version: rec.version,
+            display_name: Some(rec.name),
+            is_official: rec.is_official,
+        })
+        .collect();
+
     let history = history::load_history(&app, &profile_id)?;
     let payload = BackupPayload {
         profile_name,
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
         credentials,
         history,
         frontend_state,
+        required_plugins,
     };
 
     let envelope = backup::encrypt_payload(&payload, &passphrase)?;
@@ -601,6 +630,266 @@ pub async fn inspect_profile_backup(file_path: String) -> Result<BackupMetadata,
     let raw = std::fs::read_to_string(&file_path)
         .map_err(|err| format!("Failed to read backup file: {err}"))?;
     backup::inspect_envelope(&raw)
+}
+
+#[tauri::command]
+pub async fn preview_backup_restore(
+    app: AppHandle,
+    file_path: String,
+    passphrase: String,
+) -> Result<BackupRestorePreview, String> {
+    let raw = std::fs::read_to_string(&file_path)
+        .map_err(|err| format!("Failed to read backup file: {err}"))?;
+    let envelope = backup::parse_and_validate_envelope(&raw)?;
+    let payload = backup::decrypt_envelope(&envelope, &passphrase)?;
+
+    let requirements: Vec<BackupPluginRequirement> = if !payload.required_plugins.is_empty() {
+        payload.required_plugins
+    } else {
+        payload
+            .credentials
+            .iter()
+            .filter(|(_, map)| {
+                map.iter()
+                    .any(|(k, v)| k != vault::AUTH_MODE_KEY && !v.trim().is_empty())
+            })
+            .map(|(platform_id, _)| BackupPluginRequirement {
+                plugin_id: platform_id.clone(),
+                version: String::new(),
+                display_name: None,
+                is_official: false,
+            })
+            .collect()
+    };
+
+    let installed_records =
+        crate::plugins::registry::load_installed_records(&app).unwrap_or_default();
+    let installed_map: HashMap<String, crate::plugins::registry::InstalledPluginRecord> =
+        installed_records
+            .into_iter()
+            .map(|r| (r.id.clone(), r))
+            .collect();
+
+    let index_opt = crate::plugins::registry::fetch_registry_index(&app)
+        .await
+        .ok();
+    let host_version = env!("CARGO_PKG_VERSION");
+    let (backup_app_version, is_older_version, is_newer_version, version_warning) =
+        backup::evaluate_backup_app_version(&payload.app_version, host_version);
+
+    let mut already_installed = Vec::new();
+    let mut missing_available = Vec::new();
+    let mut missing_unavailable = Vec::new();
+
+    for req in requirements {
+        let required_version = (!req.version.trim().is_empty()).then(|| req.version.clone());
+
+        if let Some(inst) = installed_map.get(&req.plugin_id) {
+            let version_differs = required_version
+                .as_deref()
+                .is_some_and(|v| v != inst.version);
+            already_installed.push(BackupRestorePluginItem {
+                plugin_id: req.plugin_id,
+                display_name: req.display_name.unwrap_or_else(|| inst.name.clone()),
+                required_version,
+                installed_version: Some(inst.version.clone()),
+                target_version: None,
+                icon_svg: inst.icon_svg.clone(),
+                brand_colour: inst
+                    .brand_colour
+                    .clone()
+                    .unwrap_or_else(|| "#64748B".to_string()),
+                is_official: inst.is_official || req.is_official,
+                verified: inst.verified,
+                version_differs,
+                reason: None,
+            });
+            continue;
+        }
+
+        let entry_opt = index_opt
+            .as_ref()
+            .and_then(|idx| idx.plugins.iter().find(|p| p.slug == req.plugin_id));
+
+        let Some(entry) = entry_opt else {
+            missing_unavailable.push(BackupRestorePluginItem {
+                plugin_id: req.plugin_id.clone(),
+                display_name: req.display_name.unwrap_or_else(|| req.plugin_id.clone()),
+                required_version,
+                installed_version: None,
+                target_version: None,
+                icon_svg: crate::plugins::registry::load_cached_manifest_icon(&app, &req.plugin_id),
+                brand_colour: "#64748B".to_string(),
+                is_official: req.is_official,
+                verified: false,
+                version_differs: false,
+                reason: Some(
+                    "Not found in the official plugin registry (may be a locally sideloaded .wasm plugin)."
+                        .to_string(),
+                ),
+            });
+            continue;
+        };
+
+        let is_official = crate::plugins::registry::is_official_plugin(
+            entry.is_official || req.is_official,
+            entry.author.as_ref(),
+        );
+        let fallback_icon = entry
+            .icon_svg
+            .clone()
+            .or_else(|| crate::plugins::registry::load_cached_manifest_icon(&app, &req.plugin_id));
+        let fallback_colour = entry
+            .brand_colour
+            .clone()
+            .unwrap_or_else(|| "#64748B".to_string());
+
+        match crate::plugins::registry::fetch_plugin_manifest(
+            &app,
+            &req.plugin_id,
+            entry.manifest_url.as_deref(),
+            Some(&entry.latest_version),
+        )
+        .await
+        {
+            Ok(manifest) => {
+                let icon_svg = manifest.resolved_icon_svg().or(fallback_icon);
+                let brand_colour = manifest.brand_colour.clone().unwrap_or(fallback_colour);
+                let display_name = manifest
+                    .display_name
+                    .clone()
+                    .or(req.display_name)
+                    .unwrap_or_else(|| entry.display_name.clone());
+
+                let mut chosen_version: Option<String> = None;
+                let mut compat_error: Option<String> = None;
+
+                if let Some(ref backed_up_ver) = required_version
+                    && let Some(ver_entry) = manifest
+                        .versions
+                        .iter()
+                        .find(|v| &v.version == backed_up_ver)
+                {
+                    let req_str = ver_entry
+                        .compatible_app_version
+                        .as_deref()
+                        .or(manifest.compatible_app_version.as_deref())
+                        .or(entry.compatible_app_version.as_deref())
+                        .unwrap_or(">=1.0.0");
+                    let (ok, err) = registry::evaluate_compatibility(host_version, req_str);
+                    if ok {
+                        chosen_version = Some(ver_entry.version.clone());
+                    } else {
+                        compat_error = err;
+                    }
+                }
+
+                if chosen_version.is_none()
+                    && let Some(latest_entry) = manifest
+                        .versions
+                        .iter()
+                        .find(|v| v.version == entry.latest_version)
+                        .or_else(|| manifest.versions.first())
+                {
+                    let req_str = latest_entry
+                        .compatible_app_version
+                        .as_deref()
+                        .or(manifest.compatible_app_version.as_deref())
+                        .or(entry.compatible_app_version.as_deref())
+                        .unwrap_or(">=1.0.0");
+                    let (ok, err) = registry::evaluate_compatibility(host_version, req_str);
+                    if ok {
+                        chosen_version = Some(latest_entry.version.clone());
+                    } else {
+                        compat_error = err;
+                    }
+                }
+
+                if let Some(target_version) = chosen_version {
+                    missing_available.push(BackupRestorePluginItem {
+                        plugin_id: req.plugin_id,
+                        display_name,
+                        required_version,
+                        installed_version: None,
+                        target_version: Some(target_version),
+                        icon_svg,
+                        brand_colour,
+                        is_official,
+                        verified: true,
+                        version_differs: false,
+                        reason: None,
+                    });
+                } else {
+                    missing_unavailable.push(BackupRestorePluginItem {
+                        plugin_id: req.plugin_id,
+                        display_name,
+                        required_version,
+                        installed_version: None,
+                        target_version: None,
+                        icon_svg,
+                        brand_colour,
+                        is_official,
+                        verified: true,
+                        version_differs: false,
+                        reason: Some(compat_error.unwrap_or_else(|| {
+                            format!("Incompatible with SocialPoster v{host_version}.")
+                        })),
+                    });
+                }
+            }
+            Err(_) => {
+                let req_str = entry.compatible_app_version.as_deref().unwrap_or(">=1.0.0");
+                let (ok, err) = registry::evaluate_compatibility(host_version, req_str);
+                if ok {
+                    missing_available.push(BackupRestorePluginItem {
+                        plugin_id: req.plugin_id,
+                        display_name: req
+                            .display_name
+                            .unwrap_or_else(|| entry.display_name.clone()),
+                        required_version,
+                        installed_version: None,
+                        target_version: Some(entry.latest_version.clone()),
+                        icon_svg: fallback_icon,
+                        brand_colour: fallback_colour,
+                        is_official,
+                        verified: true,
+                        version_differs: false,
+                        reason: None,
+                    });
+                } else {
+                    missing_unavailable.push(BackupRestorePluginItem {
+                        plugin_id: req.plugin_id,
+                        display_name: req
+                            .display_name
+                            .unwrap_or_else(|| entry.display_name.clone()),
+                        required_version,
+                        installed_version: None,
+                        target_version: None,
+                        icon_svg: fallback_icon,
+                        brand_colour: fallback_colour,
+                        is_official,
+                        verified: true,
+                        version_differs: false,
+                        reason: Some(err.unwrap_or_else(|| {
+                            format!("Incompatible with SocialPoster v{host_version}.")
+                        })),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(BackupRestorePreview {
+        profile_name: payload.profile_name,
+        backup_app_version,
+        current_app_version: host_version.to_string(),
+        is_older_version,
+        is_newer_version,
+        version_warning,
+        already_installed,
+        missing_available,
+        missing_unavailable,
+    })
 }
 
 fn resolve_non_colliding_profile_name(existing_names: &[String], requested: &str) -> String {

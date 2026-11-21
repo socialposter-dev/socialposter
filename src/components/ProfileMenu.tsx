@@ -10,10 +10,12 @@ import {
   Trash2,
   Upload,
   User,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -304,9 +306,21 @@ export function ProfileMenu({
 
       {/* Rename Profile Modal */}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename Profile</DialogTitle>
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>Rename Profile</DialogTitle>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
           </DialogHeader>
           <form onSubmit={handleRenameSubmit} className="space-y-4">
             <div className="space-y-1.5">
@@ -343,11 +357,23 @@ export function ProfileMenu({
 
       {/* Set / Change / Remove Password Modal */}
       <Dialog open={passwordOpen} onOpenChange={setPasswordOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>
-              {activeProfile?.hasPassword ? "Change Password" : "Set Password"}
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>
+                {activeProfile?.hasPassword ? "Change Password" : "Set Password"}
+              </DialogTitle>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
           </DialogHeader>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             {activeProfile?.hasPassword && (
@@ -418,9 +444,21 @@ export function ProfileMenu({
 
       {/* Delete Profile Confirmation Modal */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent showCloseButton={false} className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete {activeProfile?.name}?</DialogTitle>
+            <div className="flex items-center justify-between gap-4">
+              <DialogTitle>Delete {activeProfile?.name}?</DialogTitle>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Close"
+                >
+                  <X className="size-4" />
+                </Button>
+              </DialogClose>
+            </div>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Saved accounts, drafts, and post history for this profile will be

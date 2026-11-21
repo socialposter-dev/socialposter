@@ -662,7 +662,11 @@ export function Composer({
       {/* Compact character counter, Auto-thread toggle & Post Now footer */}
       <div className="mt-4 flex min-h-8 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs">
-          {enabledPlatforms.length === 0 ? (
+          {platforms.length === 0 ? (
+            <span className="text-muted-foreground">
+              Open Plugins in the top bar to install a platform
+            </span>
+          ) : enabledPlatforms.length === 0 ? (
             <span className="text-muted-foreground">
               Click a platform above to set it up
             </span>

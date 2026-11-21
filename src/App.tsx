@@ -16,6 +16,7 @@ import {
   History,
   Loader2,
   Moon,
+  Puzzle,
   RefreshCw,
   RotateCw,
   Sun,
@@ -55,6 +56,11 @@ const HistorySheet = lazy(() =>
 const QueueDialog = lazy(() =>
   import("@/components/QueueDialog").then((m) => ({
     default: m.QueueDialog,
+  })),
+);
+const PluginsDialog = lazy(() =>
+  import("@/components/PluginsDialog").then((m) => ({
+    default: m.PluginsDialog,
   })),
 );
 const SettingsDialog = lazy(() =>
@@ -225,6 +231,7 @@ function SocialPosterApp() {
   const [creditsOpen, setCreditsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
 
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updatePhase, setUpdatePhase] = useState<
@@ -942,6 +949,16 @@ function SocialPosterApp() {
               type="button"
               variant="outline"
               size="sm"
+              onClick={() => setPluginsOpen(true)}
+            >
+              <Puzzle className="mr-1.5 size-3.5" />
+              Plugins
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setCreditsOpen(true)}
             >
               <HeartHandshake className="mr-1.5 size-3.5" />
@@ -973,6 +990,7 @@ function SocialPosterApp() {
                   onSelectAll={handleSelectAll}
                   onClearAll={handleClearAll}
                   onOpenSettings={(platform) => setSettingsPlatform(platform)}
+                  onOpenPlugins={() => setPluginsOpen(true)}
                 />
 
                 <Composer
@@ -1062,6 +1080,18 @@ function SocialPosterApp() {
             platforms={platforms}
             open={true}
             onOpenChange={setCreditsOpen}
+          />
+        )}
+
+        {pluginsOpen && (
+          <PluginsDialog
+            open={true}
+            onOpenChange={setPluginsOpen}
+            onPluginsChanged={async () => {
+              if (activeProfile && activeProfile.isUnlocked) {
+                await loadUnlockedProfileData(activeProfile.id, false);
+              }
+            }}
           />
         )}
 

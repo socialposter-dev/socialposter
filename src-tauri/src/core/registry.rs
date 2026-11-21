@@ -1,20 +1,16 @@
-use crate::core::platform::{PlatformEntry, PlatformMetadata, SocialPlatform};
+use crate::core::platform::{PlatformMetadata, SocialPlatform};
 use semver::{Version, VersionReq};
 
-/// Collects all registered platform plugins via `inventory`, sorted by platform `id`.
+/// Collects all dynamically loaded WebAssembly platform plugins, sorted by `id`.
 pub fn all_platforms() -> Vec<Box<dyn SocialPlatform>> {
-    let mut platforms: Vec<Box<dyn SocialPlatform>> = inventory::iter::<PlatformEntry>()
-        .map(|entry| (entry.factory)())
-        .collect();
+    let mut platforms = crate::plugins::all_wasm_platforms();
     platforms.sort_by(|a, b| a.id().cmp(b.id()));
     platforms
 }
 
-/// Looks up a single registered platform plugin by its unique `id`.
+/// Looks up a single dynamically loaded WebAssembly platform plugin by `id`.
 pub fn find_platform(id: &str) -> Option<Box<dyn SocialPlatform>> {
-    inventory::iter::<PlatformEntry>()
-        .map(|entry| (entry.factory)())
-        .find(|platform| platform.id() == id)
+    crate::plugins::find_wasm_platform(id)
 }
 
 /// Evaluates whether a SemVer requirement string is satisfied by `host_version_str`.
@@ -69,17 +65,19 @@ pub fn to_metadata(
     let (is_compatible, compatibility_error) = check_compatibility(platform);
 
     PlatformMetadata {
-        id: platform.id(),
-        name: platform.name(),
-        accent_colour: platform.accent_colour(),
-        version: platform.version(),
-        compatible_app_version: platform.compatible_app_version(),
+        id: platform.id().to_string(),
+        name: platform.name().to_string(),
+        accent_colour: platform.accent_colour().to_string(),
+        version: platform.version().to_string(),
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        compatible_app_version: platform.compatible_app_version().to_string(),
         is_compatible,
         compatibility_error,
+        is_official: platform.is_official(),
         authors: platform.authors(),
         auth_modes: platform.auth_modes(),
         active_auth_mode,
-        setup_instructions: platform.setup_instructions(),
+        setup_instructions: platform.setup_instructions().to_string(),
         capabilities: platform.capabilities(),
         is_configured,
     }
@@ -90,21 +88,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn discovers_registered_platforms() {
-        let platforms = all_platforms();
-        assert!(
-            !platforms.is_empty(),
-            "expected at least one registered platform"
-        );
-    }
-
-    #[test]
-    fn finds_platform_by_id() {
-        let platforms = all_platforms();
-        let first = platforms.first().expect("at least one platform registered");
-        let found = find_platform(first.id());
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().name(), first.name());
+    fn returns_none_for_unknown_platform() {
         assert!(find_platform("non_existent_platform").is_none());
     }
 
