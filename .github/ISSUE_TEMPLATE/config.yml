@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Submit a New Platform Integration
-    url: https://github.com/socialposter-dev/socialposter/blob/main/CONTRIBUTING.md
-    about: Follow the single-file Rust plugin guide to add a social network via Pull Request
+  - name: Browse or Publish Platform Plugins
+    url: https://socialposter.dev
+    about: Social networks are standalone Wasm plugins hosted on SocialPoster Hub rather than built into the desktop app.
+  - name: Build a New Platform Plugin
+    url: https://github.com/socialposter-dev/plugin-starter
+    about: Use the official Wasm plugin template to add support for a new social network.

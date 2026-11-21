@@ -1,60 +1,33 @@
 name: Bug Report
-description: Report a crash, UI issue, or broken social platform integration
+description: Report a bug in the SocialPoster desktop app
 labels: ["bug"]
 body:
   - type: input
-    id: app_version
+    id: version
     attributes:
-      label: App Version
-      placeholder: e.g. 0.1.0
+      label: App Version & OS
+      placeholder: e.g. v1.0.0 on Windows 11 / macOS 15 / Ubuntu 24.04
     validations:
       required: true
-
-  - type: dropdown
-    id: os
-    attributes:
-      label: Operating System
-      options:
-        - Windows 11 / 10
-        - macOS (Apple Silicon)
-        - macOS (Intel)
-        - Linux (AppImage)
-        - Linux (.deb / other)
-    validations:
-      required: true
-
   - type: input
-    id: platform
+    id: plugin
     attributes:
-      label: Affected Platform & Auth Mode
-      placeholder: e.g. Mastodon (Browser OAuth), Discord (Webhook), or General UI
-    validations:
-      required: false
-
+      label: Related Plugin (if applicable)
+      placeholder: e.g. Discord v1.0.1, or None
   - type: textarea
-    id: summary
+    id: description
     attributes:
       label: What happened?
       description: Describe the bug and what you expected to happen instead.
     validations:
       required: true
-
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
+      label: Steps to Reproduce
       placeholder: |
-        1. Open ...
-        2. Click ...
-        3. See error
+        1. Open...
+        2. Click...
+        3. See error...
     validations:
       required: true
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Error message or logs
-      description: Paste any error text shown in the app. Do not include API keys or tokens.
-      render: text
-    validations:
-      required: false

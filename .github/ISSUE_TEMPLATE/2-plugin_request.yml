@@ -1,0 +1,56 @@
+name: Official Plugin / Platform Request
+description: Request a new official Wasm plugin or a platform-specific feature on an existing official plugin
+labels: ["plugin-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Social networks run as standalone WebAssembly (`.wasm`) plugins hosted on [socialposter.dev](https://socialposter.dev).
+        If you are a developer and want to build this integration yourself, use the [`socialposter-dev/plugin-starter`](https://github.com/socialposter-dev/plugin-starter) template.
+
+  - type: dropdown
+    id: request_type
+    attributes:
+      label: Request Type
+      options:
+        - New official plugin (for a social network not yet on socialposter.dev)
+        - Platform-specific feature or new auth mode for an existing official plugin
+    validations:
+      required: true
+
+  - type: input
+    id: network
+    attributes:
+      label: Social Network / Official Plugin Name & URL
+      placeholder: e.g. Bluesky (https://bsky.app) or Discord (existing plugin)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth_method
+    attributes:
+      label: Authentication Method
+      options:
+        - OAuth 2.0
+        - Personal Access Token / App Password / API Key
+        - Webhook URL
+        - Bot Token
+        - Not sure
+    validations:
+      required: false
+
+  - type: input
+    id: api_docs
+    attributes:
+      label: Official API Documentation URL
+      placeholder: https://...
+    validations:
+      required: false
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Notes & Media Requirements
+      description: Mention character limits, image/video support, threading, or specific API capabilities needed.
+    validations:
+      required: true

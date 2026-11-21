@@ -1,17 +1,17 @@
 name: Feature Request
-description: Suggest an improvement to the composer, history, or desktop app
+description: Suggest an improvement to the core desktop app
 labels: ["enhancement"]
 body:
   - type: textarea
-    id: problem
+    id: summary
     attributes:
-      label: What are you trying to accomplish?
+      label: Feature Description
+      description: Describe the core app feature you would like to see. (New social network integrations should be built as Wasm plugins via socialposter-dev/plugin-starter.)
     validations:
       required: true
-
   - type: textarea
-    id: proposal
+    id: motivation
     attributes:
-      label: Suggested solution
+      label: Why is this useful?
     validations:
-      required: true
+      required: false
