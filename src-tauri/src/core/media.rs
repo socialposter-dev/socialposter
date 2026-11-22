@@ -111,6 +111,14 @@ pub fn prepare_media_for_platform(
     media: &[MediaAttachment],
     max_image_bytes: Option<usize>,
 ) -> Result<(Vec<MediaAttachment>, Vec<String>), String> {
+    prepare_media_for_platform_with_options(media, max_image_bytes, true)
+}
+
+pub fn prepare_media_for_platform_with_options(
+    media: &[MediaAttachment],
+    max_image_bytes: Option<usize>,
+    auto_compress: bool,
+) -> Result<(Vec<MediaAttachment>, Vec<String>), String> {
     let Some(limit) = max_image_bytes else {
         return Ok((media.to_vec(), Vec::new()));
     };
@@ -141,6 +149,14 @@ pub fn prepare_media_for_platform(
         }
 
         let original_name = file_name_for_note(&attachment.path);
+        if !auto_compress {
+            return Err(format!(
+                "Image '{original_name}' ({}) exceeds the {} limit (auto-compression is disabled in Settings).",
+                format_bytes(original_len),
+                format_bytes(limit)
+            ));
+        }
+
         let compressed = compress_image_to_limit(&raw_bytes, limit)?;
         let compressed_len = compressed.len();
 
@@ -234,5 +250,20 @@ mod tests {
         assert_eq!(result[0].bytes.as_deref(), Some(small_png.as_slice()));
         assert_eq!(result[0].bytes.as_ref().map(Vec::len), Some(original_len));
         assert!(notes.is_empty());
+    }
+
+    #[test]
+    fn rejects_oversized_image_when_auto_compress_disabled() {
+        let raw_png = synthetic_noisy_png(1400, 1400);
+        let attachment = MediaAttachment {
+            path: PathBuf::from("large.png"),
+            mime_type: "image/png".to_string(),
+            alt_text: None,
+            bytes: Some(raw_png),
+        };
+
+        let err = prepare_media_for_platform_with_options(&[attachment], Some(976_562), false)
+            .expect_err("rejects oversized image when compression is disabled");
+        assert!(err.contains("auto-compression is disabled"));
     }
 }

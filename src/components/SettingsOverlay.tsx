@@ -63,6 +63,8 @@ export type SettingsSection =
 interface SettingsOverlayProps {
   open: boolean;
   initialSection?: SettingsSection;
+  suppressEscape?: boolean;
+  availableUpdate?: Update | null;
   onClose: () => void;
   desktopSettings: DesktopSettings;
   onDesktopSettingsChange: (next: DesktopSettings) => void;
@@ -100,9 +102,21 @@ const SECTION_TITLES: Record<SettingsSection, string> = {
   reset: "Reset & Data",
 };
 
+function formatLastExported(iso: string | null | undefined): string {
+  if (!iso) return "Never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export function SettingsOverlay({
   open,
   initialSection = "general",
+  suppressEscape = false,
+  availableUpdate = null,
   onClose,
   desktopSettings,
   onDesktopSettingsChange,
@@ -138,8 +152,12 @@ export function SettingsOverlay({
 
   // About & Updates state
   const [appVersion, setAppVersion] = useState("1.1.0");
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>("idle");
-  const [foundUpdate, setFoundUpdate] = useState<Update | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
+    availableUpdate ? "available" : "idle",
+  );
+  const [foundUpdate, setFoundUpdate] = useState<Update | null>(
+    availableUpdate,
+  );
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
 
   // Danger zone confirmations
@@ -155,6 +173,13 @@ export function SettingsOverlay({
       setSection(initialSection);
     }
   }, [open, initialSection]);
+
+  useEffect(() => {
+    if (availableUpdate && updateStatus === "idle") {
+      setFoundUpdate(availableUpdate);
+      setUpdateStatus("available");
+    }
+  }, [availableUpdate, updateStatus]);
 
   useEffect(() => {
     setRenameValue(activeProfile?.name ?? "");
@@ -176,13 +201,13 @@ export function SettingsOverlay({
       return;
     }
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isRecordingHotkey) {
+      if (e.key === "Escape" && !isRecordingHotkey && !suppressEscape) {
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, isRecordingHotkey, onClose]);
+  }, [open, isRecordingHotkey, suppressEscape, onClose]);
 
   useEffect(() => {
     if (!confirmAction) return;
@@ -433,7 +458,7 @@ export function SettingsOverlay({
       aria-label="Settings"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4 supports-backdrop-filter:backdrop-blur-xs"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !suppressEscape) onClose();
       }}
     >
       <div className="flex h-[640px] max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-popover text-popover-foreground shadow-2xl ring-1 ring-foreground/10">
@@ -459,7 +484,7 @@ export function SettingsOverlay({
                           key={item.id}
                           type="button"
                           onClick={() => setSection(item.id)}
-                          className={`flex w-full cursor-pointer items-center rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
+                          className={`flex w-full cursor-pointer items-center justify-between rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors ${
                             active
                               ? item.danger
                                 ? "bg-destructive/15 text-destructive shadow-2xs"
@@ -469,7 +494,10 @@ export function SettingsOverlay({
                                 : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                           }`}
                         >
-                          {item.label}
+                          <span>{item.label}</span>
+                          {item.id === "about" && availableUpdate && (
+                            <span className="size-2 rounded-full bg-primary" />
+                          )}
                         </button>
                       );
                     })}
@@ -511,11 +539,11 @@ export function SettingsOverlay({
               {section === "general" && (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Customise startup behaviour, system tray minimising, and
-                    your global Quick Compose shortcut.
+                    Customise startup behaviour, system tray minimising, update
+                    checks, and your global Quick Compose shortcut.
                   </p>
 
-                  <div className="divide-y divide-border/60">
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-card px-5">
                     <div className="flex items-center justify-between gap-6 py-4">
                       <div className="space-y-0.5">
                         <p className="text-sm font-medium">Launch at Startup</p>
@@ -559,6 +587,27 @@ export function SettingsOverlay({
                     <div className="flex items-center justify-between gap-6 py-4">
                       <div className="space-y-0.5">
                         <p className="text-sm font-medium">
+                          Check for Updates on Startup
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Automatically check GitHub Releases for new versions
+                          when SocialPoster launches.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={desktopSettings.checkUpdatesOnStartup}
+                        disabled={savingDesktop}
+                        onCheckedChange={(checked) =>
+                          void persistDesktopSetting({
+                            checkUpdatesOnStartup: checked,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-6 py-4">
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-medium">
                           Quick Compose Hotkey
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -575,7 +624,7 @@ export function SettingsOverlay({
                           className={`h-8 min-w-36 cursor-pointer rounded-md border px-3 text-xs font-medium transition-colors ${
                             isRecordingHotkey
                               ? "border-primary bg-primary/10 text-primary"
-                              : "border-border bg-card text-foreground hover:bg-muted/40"
+                              : "border-border bg-background text-foreground hover:bg-muted/40"
                           }`}
                         >
                           {isRecordingHotkey
@@ -600,6 +649,55 @@ export function SettingsOverlay({
                             Clear
                           </Button>
                         )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                      Publishing &amp; Media
+                    </h3>
+                    <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-card px-5">
+                      <div className="flex items-center justify-between gap-6 py-4">
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">
+                            Auto-Split Long Posts into Threads
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Automatically split long posts at word boundaries
+                            into chained reply threads on supported platforms.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={desktopSettings.autoThreadPosts}
+                          disabled={savingDesktop}
+                          onCheckedChange={(checked) =>
+                            void persistDesktopSetting({
+                              autoThreadPosts: checked,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-6 py-4">
+                        <div className="space-y-0.5">
+                          <p className="text-sm font-medium">
+                            Auto-Compress Oversized Images
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Resize and compress oversized images to fit each
+                            platform&apos;s file size limit.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={desktopSettings.autoCompressImages}
+                          disabled={savingDesktop}
+                          onCheckedChange={(checked) =>
+                            void persistDesktopSetting({
+                              autoCompressImages: checked,
+                            })
+                          }
+                        />
                       </div>
                     </div>
                   </div>
@@ -841,6 +939,10 @@ export function SettingsOverlay({
                           profile&apos;s credentials, history, and required
                           plugins.
                         </p>
+                        <p className="text-[11px] text-muted-foreground/80">
+                          Last exported:{" "}
+                          {formatLastExported(activeProfile?.lastBackupAt)}
+                        </p>
                       </div>
                       <Button
                         type="button"
@@ -885,7 +987,7 @@ export function SettingsOverlay({
                     data.
                   </p>
 
-                  <div className="divide-y divide-border/60">
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-card px-5">
                     <div className="flex items-center justify-between gap-6 py-4">
                       <div className="space-y-0.5">
                         <p className="flex items-center gap-2 text-sm font-medium">
@@ -948,7 +1050,7 @@ export function SettingsOverlay({
                         </div>
                         <p className="text-xs text-muted-foreground">
                           Cross-platform desktop social publisher powered by
-                          WebAssembly plugins.
+                          Community plugins.
                         </p>
                       </div>
                     </div>

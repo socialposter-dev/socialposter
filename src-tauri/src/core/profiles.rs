@@ -22,6 +22,8 @@ pub struct Profile {
     pub password_hash: Option<String>,
     pub salt: Option<String>,
     pub created_at: String,
+    #[serde(default)]
+    pub last_backup_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,6 +34,8 @@ pub struct ProfileInfo {
     pub has_password: bool,
     pub is_unlocked: bool,
     pub created_at: String,
+    #[serde(default)]
+    pub last_backup_at: Option<String>,
 }
 
 #[derive(Default)]
@@ -219,6 +223,7 @@ pub fn ensure_initialized(app: &AppHandle) -> Result<Vec<Profile>, String> {
         password_hash: None,
         salt: None,
         created_at: now_iso8601_utc(),
+        last_backup_at: None,
     };
 
     let profiles = vec![default_profile];
@@ -234,6 +239,7 @@ pub fn to_info(profile: &Profile, state: &ProfileSessionState) -> ProfileInfo {
         has_password: profile.has_password,
         is_unlocked: state.is_unlocked(profile),
         created_at: profile.created_at.clone(),
+        last_backup_at: profile.last_backup_at.clone(),
     }
 }
 
@@ -328,6 +334,7 @@ pub fn create_profile(
         password_hash,
         salt,
         created_at: now_iso8601_utc(),
+        last_backup_at: None,
     };
 
     profiles.push(profile.clone());
@@ -476,12 +483,24 @@ pub fn delete_profile(
             password_hash: None,
             salt: None,
             created_at: now_iso8601_utc(),
+            last_backup_at: None,
         });
     }
 
     save_profiles(app, &profiles)?;
     crate::core::scheduler::refresh_tray_tooltip(app);
     Ok(())
+}
+
+pub fn record_last_backup(app: &AppHandle, profile_id: &str) -> Result<String, String> {
+    let mut profiles = ensure_initialized(app)?;
+    let Some(profile) = profiles.iter_mut().find(|p| p.id == profile_id) else {
+        return Err(format!("Unknown profile '{profile_id}'."));
+    };
+    let ts = now_iso8601_utc();
+    profile.last_backup_at = Some(ts.clone());
+    save_profiles(app, &profiles)?;
+    Ok(ts)
 }
 
 #[cfg(test)]
@@ -506,6 +525,7 @@ mod tests {
             password_hash: Some(hash.clone()),
             salt: Some(salt.clone()),
             created_at: "2026-11-16T00:00:00Z".to_string(),
+            last_backup_at: None,
         };
 
         let json = serde_json::to_string(&profile).expect("serialises profile");

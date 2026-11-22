@@ -279,6 +279,7 @@ pub async fn start_platform_oauth(
 pub async fn broadcast_post(
     app: AppHandle,
     state: State<'_, ProfileSessionState>,
+    desktop_state: State<'_, DesktopSettingsState>,
     profile_id: String,
     targets: Vec<PlatformDispatchRequest>,
     master_text: String,
@@ -288,8 +289,19 @@ pub async fn broadcast_post(
 ) -> Result<Vec<PostOutcome>, String> {
     profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
 
-    let outcomes =
-        dispatcher::dispatch_all(&profile_id, targets, auto_thread.unwrap_or(false)).await;
+    let (allow_auto_thread, allow_auto_compress) = desktop_state
+        .0
+        .lock()
+        .map(|g| (g.auto_thread_posts, g.auto_compress_images))
+        .unwrap_or((true, true));
+
+    let outcomes = dispatcher::dispatch_all(
+        &profile_id,
+        targets,
+        auto_thread.unwrap_or(false) && allow_auto_thread,
+        allow_auto_compress,
+    )
+    .await;
 
     let entry = HistoryEntry {
         id: new_history_id(),
@@ -428,6 +440,9 @@ pub async fn update_desktop_settings(
             .filter(|s| !s.is_empty()),
         developer_mode: settings.developer_mode,
         launch_at_startup: settings.launch_at_startup,
+        check_updates_on_startup: settings.check_updates_on_startup,
+        auto_thread_posts: settings.auto_thread_posts,
+        auto_compress_images: settings.auto_compress_images,
     };
 
     desktop::apply_global_shortcut(&app, normalized.global_shortcut.as_deref())?;
@@ -599,6 +614,7 @@ pub async fn factory_reset(
         has_password: default_profile.has_password,
         is_unlocked: true,
         created_at: default_profile.created_at,
+        last_backup_at: default_profile.last_backup_at,
     })
 }
 
@@ -786,7 +802,10 @@ pub async fn export_profile_backup(
     let envelope = backup::encrypt_payload(&payload, &passphrase)?;
     let json = serde_json::to_string_pretty(&envelope)
         .map_err(|err| format!("Failed to serialise backup envelope: {err}"))?;
-    std::fs::write(&file_path, json).map_err(|err| format!("Failed to write backup file: {err}"))
+    std::fs::write(&file_path, json)
+        .map_err(|err| format!("Failed to write backup file: {err}"))?;
+    let _ = profiles::record_last_backup(&app, &profile_id);
+    Ok(())
 }
 
 #[tauri::command]

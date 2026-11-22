@@ -352,7 +352,19 @@ pub async fn execute_scheduled_job(
         })
         .collect();
 
-    let outcomes = dispatcher::dispatch_all(profile_id, targets, job.auto_thread).await;
+    let (allow_auto_thread, allow_auto_compress) = app
+        .state::<crate::core::desktop::DesktopSettingsState>()
+        .0
+        .lock()
+        .map(|g| (g.auto_thread_posts, g.auto_compress_images))
+        .unwrap_or((true, true));
+    let outcomes = dispatcher::dispatch_all(
+        profile_id,
+        targets,
+        job.auto_thread && allow_auto_thread,
+        allow_auto_compress,
+    )
+    .await;
 
     let entry = HistoryEntry {
         id: Uuid::new_v4().to_string(),
@@ -558,6 +570,7 @@ mod tests {
             password_hash: Some("hash".to_string()),
             salt: Some("salt".to_string()),
             created_at: "2026-01-01T00:00:00Z".to_string(),
+            last_backup_at: None,
         };
         assert!(!session.is_unlocked(&locked_profile));
 

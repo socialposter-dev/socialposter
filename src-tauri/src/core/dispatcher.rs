@@ -32,6 +32,7 @@ pub async fn dispatch_all(
     profile_id: &str,
     targets: Vec<PlatformDispatchRequest>,
     auto_thread: bool,
+    auto_compress: bool,
 ) -> Vec<PostOutcome> {
     let mut set: JoinSet<PostOutcome> = JoinSet::new();
     let mut outcomes: Vec<PostOutcome> = Vec::with_capacity(targets.len());
@@ -77,7 +78,11 @@ pub async fn dispatch_all(
         set.spawn(async move {
             let raw_media = target.media;
             let prep_result = tokio::task::spawn_blocking(move || {
-                media::prepare_media_for_platform(&raw_media, max_image_bytes)
+                media::prepare_media_for_platform_with_options(
+                    &raw_media,
+                    max_image_bytes,
+                    auto_compress,
+                )
             })
             .await;
 

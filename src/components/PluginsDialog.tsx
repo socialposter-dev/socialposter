@@ -639,7 +639,7 @@ export function PluginsDialog({
                                 }
                                 className="inline-flex cursor-pointer items-center gap-1 text-foreground underline underline-offset-2 hover:opacity-80"
                               >
-                                <span>Author</span>
+                                <span>Website</span>
                                 <ExternalLink className="size-3" />
                               </button>
                             )}

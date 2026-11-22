@@ -8,6 +8,10 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopSettings {
@@ -17,6 +21,12 @@ pub struct DesktopSettings {
     pub developer_mode: bool,
     #[serde(default)]
     pub launch_at_startup: bool,
+    #[serde(default = "default_true")]
+    pub check_updates_on_startup: bool,
+    #[serde(default = "default_true")]
+    pub auto_thread_posts: bool,
+    #[serde(default = "default_true")]
+    pub auto_compress_images: bool,
 }
 
 impl Default for DesktopSettings {
@@ -26,6 +36,9 @@ impl Default for DesktopSettings {
             global_shortcut: Some("CommandOrControl+Shift+Space".to_string()),
             developer_mode: false,
             launch_at_startup: false,
+            check_updates_on_startup: true,
+            auto_thread_posts: true,
+            auto_compress_images: true,
         }
     }
 }

@@ -42,6 +42,7 @@ interface BackupDialogProps {
   mode: "export" | "import" | null;
   activeProfile: ProfileInfo | null;
   onClose: () => void;
+  onExported?: () => Promise<void> | void;
   onImported: (result: ImportedProfileResponse) => Promise<void>;
 }
 
@@ -67,6 +68,7 @@ export function BackupDialog({
   mode,
   activeProfile,
   onClose,
+  onExported,
   onImported,
 }: BackupDialogProps) {
   const [passphrase, setPassphrase] = useState("");
@@ -136,6 +138,7 @@ export function BackupDialog({
         passphrase,
         frontendState,
       );
+      await onExported?.();
       toast.success("Backup exported.");
       onClose();
     } catch (err) {

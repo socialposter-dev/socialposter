@@ -213,6 +213,9 @@ function SocialPosterApp() {
     globalShortcut: "CommandOrControl+Shift+Space",
     developerMode: false,
     launchAtStartup: false,
+    checkUpdatesOnStartup: true,
+    autoThreadPosts: true,
+    autoCompressImages: true,
   });
 
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
@@ -243,18 +246,35 @@ function SocialPosterApp() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     void getDesktopSettings()
-      .then((s) => setDesktopSettings(s))
+      .then((s) => {
+        if (!active) return;
+        setDesktopSettings(s);
+        if (s.checkUpdatesOnStartup) {
+          void checkForUpdateSilently().then((update) => {
+            if (!active || !update) return;
+            const dismissed = getDismissedUpdateVersion();
+            if (dismissed === update.version) return;
+            setAvailableUpdate(update);
+            setUpdatePhase("available");
+          });
+        }
+      })
       .catch(() => {
         // Ignore outside Tauri shell.
       });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === ",") {
         e.preventDefault();
-        setSettingsOpen((prev) => !prev);
+        setSettingsSection("general");
+        setSettingsOpen(true);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -400,17 +420,7 @@ function SocialPosterApp() {
   }, [draft, activeProfile]);
 
   useEffect(() => {
-    let active = true;
-    void checkForUpdateSilently().then((update) => {
-      if (!active || !update) return;
-      const dismissed = getDismissedUpdateVersion();
-      if (dismissed === update.version) return;
-      setAvailableUpdate(update);
-      setUpdatePhase("available");
-    });
-    return () => {
-      active = false;
-    };
+    // Silent update check is triggered after loading desktopSettings above.
   }, []);
 
   const handleSelectProfile = async (profileId: string) => {
@@ -710,6 +720,9 @@ function SocialPosterApp() {
       globalShortcut: "CommandOrControl+Shift+Space",
       developerMode: false,
       launchAtStartup: false,
+      checkUpdatesOnStartup: true,
+      autoThreadPosts: true,
+      autoCompressImages: true,
     });
     setSettingsOpen(false);
     await refreshProfilesAndActivate(freshProfile.id);
@@ -950,6 +963,7 @@ function SocialPosterApp() {
               type="button"
               variant="outline"
               size="icon-sm"
+              className="relative"
               onClick={() => {
                 setSettingsSection("general");
                 setSettingsOpen(true);
@@ -958,6 +972,12 @@ function SocialPosterApp() {
               title="Settings (Ctrl+,)"
             >
               <Settings className="size-4" />
+              {availableUpdate && (
+                <span
+                  aria-label="Update available"
+                  className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-primary ring-2 ring-background"
+                />
+              )}
             </Button>
           </div>
         </div>
@@ -996,6 +1016,7 @@ function SocialPosterApp() {
                   draftRestored={draftRestored}
                   onClearDraft={handleClearDraft}
                   autoThread={autoThread}
+                  allowAutoThread={desktopSettings.autoThreadPosts}
                   onAutoThreadChange={(enabled) => {
                     setAutoThread(enabled);
                     if (activeProfile) {
@@ -1078,6 +1099,8 @@ function SocialPosterApp() {
           <SettingsOverlay
             open={true}
             initialSection={settingsSection}
+            suppressEscape={backupMode !== null || addProfileOpen}
+            availableUpdate={availableUpdate}
             onClose={() => setSettingsOpen(false)}
             desktopSettings={desktopSettings}
             onDesktopSettingsChange={setDesktopSettings}
@@ -1110,6 +1133,10 @@ function SocialPosterApp() {
             mode={backupMode}
             activeProfile={activeProfile}
             onClose={() => setBackupMode(null)}
+            onExported={async () => {
+              const list = await listProfiles();
+              setProfiles(list);
+            }}
             onImported={async (result) => {
               setActiveProfileId(result.profile.id);
               setActiveProfileIdState(result.profile.id);

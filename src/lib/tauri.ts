@@ -6,6 +6,7 @@ export interface ProfileInfo {
   hasPassword: boolean;
   isUnlocked: boolean;
   createdAt: string;
+  lastBackupAt?: string | null;
 }
 
 export interface AuthorLink {
@@ -120,6 +121,9 @@ export interface DesktopSettings {
   globalShortcut: string | null;
   developerMode: boolean;
   launchAtStartup: boolean;
+  checkUpdatesOnStartup: boolean;
+  autoThreadPosts: boolean;
+  autoCompressImages: boolean;
 }
 
 export interface SavedMediaRef {

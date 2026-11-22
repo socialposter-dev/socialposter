@@ -156,6 +156,9 @@ export function QueueDialog({
     globalShortcut: "CommandOrControl+Shift+Space",
     developerMode: false,
     launchAtStartup: false,
+    checkUpdatesOnStartup: true,
+    autoThreadPosts: true,
+    autoCompressImages: true,
   });
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);

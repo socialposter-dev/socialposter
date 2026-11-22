@@ -38,6 +38,7 @@ interface ComposerProps {
   draftRestored: boolean;
   onClearDraft: () => void;
   autoThread: boolean;
+  allowAutoThread?: boolean;
   onAutoThreadChange: (enabled: boolean) => void;
   isPosting: boolean;
   onBroadcast: (targets: PlatformDispatchRequest[]) => Promise<void>;
@@ -113,6 +114,7 @@ export function Composer({
   draftRestored,
   onClearDraft,
   autoThread,
+  allowAutoThread = true,
   onAutoThreadChange,
   isPosting,
   onBroadcast,
@@ -304,8 +306,9 @@ export function Composer({
       const charCount = resolvedText.length;
       const errors: string[] = [];
 
+      const effectiveAutoThread = autoThread && allowAutoThread;
       const willThread =
-        autoThread &&
+        effectiveAutoThread &&
         Boolean(platform.capabilities.supportsThreads) &&
         charCount > platform.capabilities.maxChars;
 
@@ -337,7 +340,7 @@ export function Composer({
         errors,
       };
     });
-  }, [autoThread, enabledPlatforms, masterText, media, overrides]);
+  }, [allowAutoThread, autoThread, enabledPlatforms, masterText, media, overrides]);
 
   const hasValidationErrors = validations.some((v) => v.errors.length > 0);
   const canPost =
@@ -671,7 +674,8 @@ export function Composer({
               Click a platform above to set it up
             </span>
           ) : (() => {
-            const threadSummaries = autoThread
+            const effectiveAutoThread = autoThread && allowAutoThread;
+            const threadSummaries = effectiveAutoThread
               ? validations
                   .filter(
                     (v) =>
@@ -693,7 +697,7 @@ export function Composer({
                   activeValidation.charCount >
                     activeValidation.platform.capabilities.maxChars &&
                   !(
-                    autoThread &&
+                    effectiveAutoThread &&
                     Boolean(activeValidation.platform.capabilities.supportsThreads)
                   );
                 const mediaError = activeValidation.errors.find(
@@ -716,7 +720,7 @@ export function Composer({
                       {activeValidation.platform.capabilities.maxChars}
                       {mediaError ? ` · ${mediaError}` : ""}
                     </span>
-                    {autoThread &&
+                    {effectiveAutoThread &&
                       Boolean(
                         activeValidation.platform.capabilities.supportsThreads,
                       ) &&
@@ -739,7 +743,7 @@ export function Composer({
             const nonThreadedOrSingle = validations.filter(
               (v) =>
                 !(
-                  autoThread &&
+                  effectiveAutoThread &&
                   Boolean(v.platform.capabilities.supportsThreads) &&
                   v.charCount > v.platform.capabilities.maxChars
                 ),
@@ -756,7 +760,7 @@ export function Composer({
               (v) =>
                 (v.charCount > v.platform.capabilities.maxChars &&
                   !(
-                    autoThread &&
+                    effectiveAutoThread &&
                     Boolean(v.platform.capabilities.supportsThreads)
                   )) ||
                 v.errors.some(
@@ -804,12 +808,17 @@ export function Composer({
           <button
             type="button"
             role="switch"
-            aria-checked={autoThread}
+            aria-checked={autoThread && allowAutoThread}
             onClick={() => onAutoThreadChange(!autoThread)}
-            disabled={isPosting}
+            disabled={isPosting || !allowAutoThread}
+            title={
+              allowAutoThread
+                ? "Split long posts into reply threads"
+                : "Auto-threading is disabled in Settings → General"
+            }
             className={cn(
-              "inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs leading-none font-medium transition-colors",
-              autoThread
+              "inline-flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs leading-none font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              autoThread && allowAutoThread
                 ? "border-primary bg-primary/10 text-foreground"
                 : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
             )}
@@ -817,7 +826,9 @@ export function Composer({
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                autoThread ? "bg-primary" : "bg-muted-foreground/50",
+                autoThread && allowAutoThread
+                  ? "bg-primary"
+                  : "bg-muted-foreground/50",
               )}
             />
             <span>Auto-thread</span>
