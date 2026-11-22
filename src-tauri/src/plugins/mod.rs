@@ -118,9 +118,14 @@ pub fn reload_installed_plugins(app: &AppHandle) -> Result<(), String> {
         }
         match WasmPlatform::from_wasm_file(&path) {
             Ok(platform) => {
+                let fallback_authors = registry::load_cached_manifest_authors(app, &record.id);
                 next_map.insert(
                     platform.id().to_string(),
-                    Arc::new(platform.with_official(record.is_official)),
+                    Arc::new(
+                        platform
+                            .with_official(record.is_official)
+                            .with_fallback_authors(fallback_authors),
+                    ),
                 );
             }
             Err(err) => {

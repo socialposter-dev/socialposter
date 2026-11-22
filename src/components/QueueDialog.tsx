@@ -154,6 +154,8 @@ export function QueueDialog({
   const [settings, setSettings] = useState<DesktopSettings>({
     minimizeToTray: true,
     globalShortcut: "CommandOrControl+Shift+Space",
+    developerMode: false,
+    launchAtStartup: false,
   });
   const [recordingShortcut, setRecordingShortcut] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);

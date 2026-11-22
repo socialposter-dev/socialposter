@@ -120,8 +120,6 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
   }
   *::-webkit-scrollbar {
     width: 6px;

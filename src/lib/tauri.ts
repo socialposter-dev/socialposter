@@ -118,6 +118,8 @@ export interface HistoryEntry {
 export interface DesktopSettings {
   minimizeToTray: boolean;
   globalShortcut: string | null;
+  developerMode: boolean;
+  launchAtStartup: boolean;
 }
 
 export interface SavedMediaRef {
@@ -289,6 +291,24 @@ export async function updateDesktopSettings(
   settings: DesktopSettings,
 ): Promise<DesktopSettings> {
   return invoke<DesktopSettings>("update_desktop_settings", { settings });
+}
+
+export async function openDataFolder(): Promise<void> {
+  return invoke<void>("open_data_folder");
+}
+
+export async function clearMediaCache(): Promise<number> {
+  return invoke<number>("clear_media_cache");
+}
+
+export async function unlinkAllProfileAccounts(
+  profileId: string,
+): Promise<number> {
+  return invoke<number>("unlink_all_profile_accounts", { profileId });
+}
+
+export async function factoryReset(): Promise<ProfileInfo> {
+  return invoke<ProfileInfo>("factory_reset");
 }
 
 export async function schedulePost(

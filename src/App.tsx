@@ -8,18 +8,14 @@ import {
   useState,
 } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ThemeProvider, useTheme } from "next-themes";
+import { ThemeProvider } from "next-themes";
 import {
   Clock,
   Download,
-  HeartHandshake,
-  History,
   Loader2,
-  Moon,
   Puzzle,
-  RefreshCw,
   RotateCw,
-  Sun,
+  Settings,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,19 +39,9 @@ const BackupDialog = lazy(() =>
     default: m.BackupDialog,
   })),
 );
-const CreditsDialog = lazy(() =>
-  import("@/components/CreditsDialog").then((m) => ({
-    default: m.CreditsDialog,
-  })),
-);
-const HistorySheet = lazy(() =>
-  import("@/components/HistorySheet").then((m) => ({
-    default: m.HistorySheet,
-  })),
-);
-const QueueDialog = lazy(() =>
-  import("@/components/QueueDialog").then((m) => ({
-    default: m.QueueDialog,
+const QueueHistoryDialog = lazy(() =>
+  import("@/components/QueueHistoryDialog").then((m) => ({
+    default: m.QueueHistoryDialog,
   })),
 );
 const PluginsDialog = lazy(() =>
@@ -68,6 +54,10 @@ const SettingsDialog = lazy(() =>
     default: m.SettingsDialog,
   })),
 );
+import {
+  SettingsOverlay,
+  type SettingsSection,
+} from "@/components/SettingsOverlay";
 import {
   clearProfileStorage,
   clearStoredDraft,
@@ -88,6 +78,8 @@ import {
   clearHistory,
   createProfile,
   deleteProfile,
+  factoryReset,
+  getDesktopSettings,
   getHistory,
   getPlatforms,
   listProfiles,
@@ -99,7 +91,9 @@ import {
   retryScheduledPost,
   schedulePost,
   setProfilePassword,
+  unlinkAllProfileAccounts,
   unlockProfile,
+  type DesktopSettings,
   type HistoryEntry,
   type PlatformDispatchRequest,
   type PlatformMetadata,
@@ -185,24 +179,6 @@ function reconcileEnabledPlatforms(
   return reconciled;
 }
 
-function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      onClick={() => setTheme(isDark ? "light" : "dark")}
-      aria-label="Toggle colour theme"
-      title="Toggle colour theme"
-    >
-      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-    </Button>
-  );
-}
-
 function SocialPosterApp() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [activeProfileId, setActiveProfileIdState] = useState<string>(() =>
@@ -223,15 +199,21 @@ function SocialPosterApp() {
   const [enabledIds, setEnabledIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialised, setIsInitialised] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
   const [outcomes, setOutcomes] = useState<PostOutcome[]>([]);
   const [settingsPlatform, setSettingsPlatform] =
     useState<PlatformMetadata | null>(null);
-  const [creditsOpen, setCreditsOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueHistoryOpen, setQueueHistoryOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("general");
+  const [desktopSettings, setDesktopSettings] = useState<DesktopSettings>({
+    minimizeToTray: true,
+    globalShortcut: "CommandOrControl+Shift+Space",
+    developerMode: false,
+    launchAtStartup: false,
+  });
 
   const [availableUpdate, setAvailableUpdate] = useState<Update | null>(null);
   const [updatePhase, setUpdatePhase] = useState<
@@ -257,8 +239,26 @@ function SocialPosterApp() {
     setScheduledPosts([]);
     setOutcomes([]);
     setSettingsPlatform(null);
-    setHistoryOpen(false);
-    setQueueOpen(false);
+    setQueueHistoryOpen(false);
+  }, []);
+
+  useEffect(() => {
+    void getDesktopSettings()
+      .then((s) => setDesktopSettings(s))
+      .catch(() => {
+        // Ignore outside Tauri shell.
+      });
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const loadUnlockedProfileData = useCallback(
@@ -514,16 +514,6 @@ function SocialPosterApp() {
     }
   };
 
-  const handleRefresh = async () => {
-    if (!activeProfile || isLocked || isRefreshing) return;
-    setIsRefreshing(true);
-    try {
-      await loadUnlockedProfileData(activeProfile.id, false);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   const handleInstallHeaderUpdate = async () => {
     if (!availableUpdate) return;
     if (updatePhase === "ready") {
@@ -677,7 +667,7 @@ function SocialPosterApp() {
     } else {
       toast.info("Loaded into composer.");
     }
-    setHistoryOpen(false);
+    setQueueHistoryOpen(false);
   };
 
   const handleClearHistory = async () => {
@@ -689,6 +679,41 @@ function SocialPosterApp() {
     } catch (err) {
       toast.error(`Failed to clear history: ${String(err)}`);
     }
+  };
+
+  const handleClearHistoryAndDrafts = async () => {
+    if (!activeProfile) return;
+    await clearHistory(activeProfile.id);
+    clearStoredDraft(activeProfile.id);
+    setDraft(EMPTY_DRAFT);
+    setDraftRestored(false);
+    setHistory([]);
+    toast.success("Post history and drafts cleared for this profile.");
+  };
+
+  const handleUnlinkAllAccounts = async () => {
+    if (!activeProfile) return;
+    await unlinkAllProfileAccounts(activeProfile.id);
+    updateEnabledIds(() => new Set());
+    await loadUnlockedProfileData(activeProfile.id, false);
+    toast.success("All accounts unlinked for this profile.");
+  };
+
+  const handleFactoryReset = async () => {
+    const freshProfile = await factoryReset();
+    localStorage.clear();
+    setActiveProfileId(freshProfile.id);
+    setActiveProfileIdState(freshProfile.id);
+    clearInMemoryProfileState();
+    setDesktopSettings({
+      minimizeToTray: true,
+      globalShortcut: "CommandOrControl+Shift+Space",
+      developerMode: false,
+      launchAtStartup: false,
+    });
+    setSettingsOpen(false);
+    await refreshProfilesAndActivate(freshProfile.id);
+    toast.success("SocialPoster has been reset to factory defaults.");
   };
 
   const handleRecallPost = async (historyId: string) => {
@@ -829,12 +854,24 @@ function SocialPosterApp() {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="relative z-40 w-full shrink-0 border-b bg-card/60 backdrop-blur-xs">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 py-3.5 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <AppLogo className="h-8 w-8 shrink-0" />
-            <h1 className="text-base font-semibold tracking-tight">
-              SocialPoster
-            </h1>
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3.5 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
+              <AppLogo className="h-8 w-8 shrink-0" />
+              <h1 className="text-base font-semibold tracking-tight">
+                SocialPoster
+              </h1>
+            </div>
+
+            <ProfileMenu
+              profiles={profiles}
+              activeProfile={activeProfile}
+              onSelectProfile={(id) => void handleSelectProfile(id)}
+              onManageProfiles={() => {
+                setSettingsSection("profiles");
+                setSettingsOpen(true);
+              }}
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -880,67 +917,21 @@ function SocialPosterApp() {
               </div>
             )}
 
-            <ProfileMenu
-              profiles={profiles}
-              activeProfile={activeProfile}
-              onSelectProfile={(id) => void handleSelectProfile(id)}
-              onOpenAddProfile={() => setAddProfileOpen(true)}
-              onLockProfile={(id) => void handleLockProfile(id)}
-              onRenameProfile={handleRenameProfile}
-              onSetProfilePassword={handleSetProfilePassword}
-              onDeleteProfile={handleDeleteProfile}
-              onExportProfile={() => setBackupMode("export")}
-              onImportProfile={() => setBackupMode("import")}
-            />
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isLocked || !activeProfile || isRefreshing}
-              onClick={() => void handleRefresh()}
-              title="Refresh platform status"
-            >
-              <RefreshCw
-                className={`mr-1.5 size-3.5${isRefreshing ? " animate-spin" : ""}`}
-              />
-              Refresh
-            </Button>
-
             <Button
               type="button"
               variant="outline"
               size="sm"
               disabled={isLocked || !activeProfile}
-              onClick={() => setQueueOpen(true)}
+              onClick={() => setQueueHistoryOpen(true)}
             >
               <Clock className="mr-1.5 size-3.5" />
-              <span>Queue</span>
+              <span>Queue &amp; History</span>
               {!isLocked && pendingQueueCount > 0 && (
                 <Badge
                   variant="secondary"
                   className="ml-1.5 h-4 px-1.5 text-[10px] font-normal"
                 >
                   {pendingQueueCount}
-                </Badge>
-              )}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isLocked || !activeProfile}
-              onClick={() => setHistoryOpen(true)}
-            >
-              <History className="mr-1.5 size-3.5" />
-              <span>History</span>
-              {!isLocked && history.length > 0 && (
-                <Badge
-                  variant="secondary"
-                  className="ml-1.5 h-4 px-1.5 text-[10px] font-normal"
-                >
-                  {history.length}
                 </Badge>
               )}
             </Button>
@@ -958,13 +949,16 @@ function SocialPosterApp() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              onClick={() => setCreditsOpen(true)}
+              size="icon-sm"
+              onClick={() => {
+                setSettingsSection("general");
+                setSettingsOpen(true);
+              }}
+              aria-label="Open settings"
+              title="Settings (Ctrl+,)"
             >
-              <HeartHandshake className="mr-1.5 size-3.5" />
-              Credits
+              <Settings className="size-4" />
             </Button>
-            <ThemeToggle />
           </div>
         </div>
       </header>
@@ -1049,49 +1043,57 @@ function SocialPosterApp() {
               />
             )}
 
-            {historyOpen && (
-              <HistorySheet
-                entries={history}
-                platforms={platforms}
+            {queueHistoryOpen && (
+              <QueueHistoryDialog
                 open={true}
-                onOpenChange={setHistoryOpen}
+                onOpenChange={setQueueHistoryOpen}
+                posts={scheduledPosts}
+                history={history}
+                platforms={platforms}
+                onPublishNow={handlePublishScheduledNow}
+                onRetry={handleRetryScheduledPost}
+                onCancel={handleCancelScheduledPost}
                 onLoadIntoComposer={handleLoadFromHistory}
                 onClearHistory={() => void handleClearHistory()}
                 onRecallPost={handleRecallPost}
               />
             )}
-
-            {queueOpen && (
-              <QueueDialog
-                open={true}
-                onOpenChange={setQueueOpen}
-                posts={scheduledPosts}
-                platforms={platforms}
-                onPublishNow={handlePublishScheduledNow}
-                onRetry={handleRetryScheduledPost}
-                onCancel={handleCancelScheduledPost}
-              />
-            )}
           </>
-        )}
-
-        {creditsOpen && (
-          <CreditsDialog
-            platforms={platforms}
-            open={true}
-            onOpenChange={setCreditsOpen}
-          />
         )}
 
         {pluginsOpen && (
           <PluginsDialog
             open={true}
             onOpenChange={setPluginsOpen}
+            developerMode={desktopSettings.developerMode}
             onPluginsChanged={async () => {
               if (activeProfile && activeProfile.isUnlocked) {
                 await loadUnlockedProfileData(activeProfile.id, false);
               }
             }}
+          />
+        )}
+
+        {settingsOpen && (
+          <SettingsOverlay
+            open={true}
+            initialSection={settingsSection}
+            onClose={() => setSettingsOpen(false)}
+            desktopSettings={desktopSettings}
+            onDesktopSettingsChange={setDesktopSettings}
+            profiles={profiles}
+            activeProfile={activeProfile}
+            platforms={platforms}
+            onSelectProfile={(id) => void handleSelectProfile(id)}
+            onOpenAddProfile={() => setAddProfileOpen(true)}
+            onLockProfile={(id) => void handleLockProfile(id)}
+            onRenameProfile={handleRenameProfile}
+            onDeleteProfile={handleDeleteProfile}
+            onSetProfilePassword={handleSetProfilePassword}
+            onOpenBackup={(mode) => setBackupMode(mode)}
+            onClearHistoryAndDrafts={handleClearHistoryAndDrafts}
+            onUnlinkAllAccounts={handleUnlinkAllAccounts}
+            onFactoryReset={handleFactoryReset}
           />
         )}
 

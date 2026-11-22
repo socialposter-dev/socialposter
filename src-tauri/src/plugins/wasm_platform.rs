@@ -375,6 +375,13 @@ impl WasmPlatform {
         self
     }
 
+    pub fn with_fallback_authors(mut self, fallback: Vec<PlatformAuthor>) -> Self {
+        if self.authors_cached.is_empty() && !fallback.is_empty() {
+            self.authors_cached = fallback;
+        }
+        self
+    }
+
     pub fn describe(&self) -> &WasmDescribeOutput {
         &self.describe
     }

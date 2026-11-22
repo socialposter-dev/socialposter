@@ -182,6 +182,12 @@ pub struct PluginManifest {
     pub summary: Option<String>,
     #[serde(default)]
     pub author: Option<RegistryAuthor>,
+    #[serde(default)]
+    pub authors: Vec<RegistryAuthor>,
+    #[serde(default, alias = "repo", alias = "source_url")]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub homepage: Option<String>,
     #[serde(default, alias = "official")]
     pub is_official: bool,
     #[serde(default)]
@@ -371,6 +377,86 @@ pub fn load_cached_manifest_icon(app: &AppHandle, plugin_id: &str) -> Option<Str
     let raw = fs::read_to_string(path).ok()?;
     let manifest: PluginManifest = serde_json::from_str(&raw).ok()?;
     manifest.resolved_icon_svg()
+}
+
+/// Resolves author attributions from a plugin's cached Hub manifest (`author`, `authors`,
+/// and `repository` / `homepage` links) for plugins whose Wasm `describe()` omits `authors`.
+pub fn load_cached_manifest_authors(
+    app: &AppHandle,
+    plugin_id: &str,
+) -> Vec<crate::core::platform::PlatformAuthor> {
+    use crate::core::platform::{AuthorLink, PlatformAuthor};
+    use std::borrow::Cow;
+
+    let safe_id: String = plugin_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let Ok(dir) = manifest_cache_dir(app) else {
+        return Vec::new();
+    };
+    let path = dir.join(format!("{safe_id}.json"));
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(manifest) = serde_json::from_str::<PluginManifest>(&raw) else {
+        return Vec::new();
+    };
+
+    let mut out: Vec<PlatformAuthor> = Vec::new();
+    let repo_url = manifest
+        .repository
+        .as_deref()
+        .or(manifest.homepage.as_deref())
+        .map(str::trim)
+        .filter(|s| s.starts_with("https://"))
+        .map(ToString::to_string);
+
+    let mut push_author = |author: &RegistryAuthor| {
+        let name = author.display_name.trim();
+        if name.is_empty() || out.iter().any(|a| a.name.eq_ignore_ascii_case(name)) {
+            return;
+        }
+        let mut links = Vec::new();
+        if let Some(url) = author
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| s.starts_with("https://"))
+        {
+            links.push(AuthorLink {
+                label: Cow::Borrowed("Website"),
+                url: Cow::Owned(url.to_string()),
+            });
+        }
+        if let Some(ref repo) = repo_url
+            && !links.iter().any(|l| l.url.as_ref() == repo.as_str())
+        {
+            links.push(AuthorLink {
+                label: Cow::Borrowed("Repository"),
+                url: Cow::Owned(repo.clone()),
+            });
+        }
+        out.push(PlatformAuthor {
+            name: Cow::Owned(name.to_string()),
+            links,
+        });
+    };
+
+    if let Some(ref primary) = manifest.author {
+        push_author(primary);
+    }
+    for extra in &manifest.authors {
+        push_author(extra);
+    }
+
+    out
 }
 
 fn installed_dir(app: &AppHandle) -> Result<PathBuf, String> {

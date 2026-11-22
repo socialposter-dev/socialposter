@@ -54,6 +54,7 @@ interface PluginsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onPluginsChanged: () => Promise<void>;
+  developerMode?: boolean;
 }
 
 type FilterTab = "all" | "official" | "installed" | "updates";
@@ -75,6 +76,7 @@ export function PluginsDialog({
   open,
   onOpenChange,
   onPluginsChanged,
+  developerMode = false,
 }: PluginsDialogProps) {
   const [plugins, setPlugins] = useState<RegistryPluginView[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1116,21 +1118,23 @@ export function PluginsDialog({
                 </DialogTitle>
 
                 <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    disabled={sideloading}
-                    onClick={() => void handleSideload()}
-                  >
-                    {sideloading ? (
-                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                    ) : (
-                      <FolderUp className="mr-1.5 size-3.5" />
-                    )}
-                    Sideload .wasm
-                  </Button>
+                  {developerMode && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2.5 text-xs"
+                      disabled={sideloading}
+                      onClick={() => void handleSideload()}
+                    >
+                      {sideloading ? (
+                        <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                      ) : (
+                        <FolderUp className="mr-1.5 size-3.5" />
+                      )}
+                      Sideload .wasm
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -1322,6 +1326,20 @@ export function PluginsDialog({
                             <p className="line-clamp-2 text-xs text-muted-foreground">
                               {plugin.description}
                             </p>
+                          )}
+
+                          {developerMode && plugin.isInstalled && (
+                            <div className="space-y-1 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 text-[11px]">
+                              <p className="truncate font-mono text-muted-foreground">
+                                id: {plugin.id}
+                              </p>
+                              <p className="truncate text-muted-foreground">
+                                domains:{" "}
+                                {plugin.allowedDomains.length > 0
+                                  ? plugin.allowedDomains.join(", ")
+                                  : "none"}
+                              </p>
+                            </div>
                           )}
                         </div>
 

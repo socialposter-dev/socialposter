@@ -426,9 +426,12 @@ pub async fn update_desktop_settings(
             .global_shortcut
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty()),
+        developer_mode: settings.developer_mode,
+        launch_at_startup: settings.launch_at_startup,
     };
 
     desktop::apply_global_shortcut(&app, normalized.global_shortcut.as_deref())?;
+    desktop::apply_launch_at_startup(normalized.launch_at_startup)?;
     desktop::save_settings(&app, &normalized)?;
 
     if let Ok(mut guard) = state.0.lock() {
@@ -436,6 +439,167 @@ pub async fn update_desktop_settings(
     }
 
     Ok(normalized)
+}
+
+#[tauri::command]
+pub async fn open_data_folder(app: AppHandle) -> Result<(), String> {
+    let dir = profiles::app_data_dir(&app)?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|err| format!("Failed to create app data directory: {err}"))?;
+    open::that(&dir).map_err(|err| format!("Failed to open data folder: {err}"))
+}
+
+#[tauri::command]
+pub async fn clear_media_cache(app: AppHandle) -> Result<u64, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut removed_bytes: u64 = 0;
+        let data_dir = profiles::app_data_dir(&app)?;
+        for sub in ["media_cache", "cache/media"] {
+            let dir = data_dir.join(sub);
+            if dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(meta) = entry.metadata() {
+                            removed_bytes = removed_bytes.saturating_add(meta.len());
+                        }
+                    }
+                }
+                std::fs::remove_dir_all(&dir)
+                    .map_err(|err| format!("Failed to clear media cache: {err}"))?;
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if name_str.starts_with("socialposter_")
+                    && !name_str.starts_with("socialposter_test_")
+                {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Ok(meta) = entry.metadata() {
+                            removed_bytes = removed_bytes.saturating_add(meta.len());
+                        }
+                        let _ = std::fs::remove_file(&path);
+                    } else if path.is_dir() {
+                        let _ = std::fs::remove_dir_all(&path);
+                    }
+                }
+            }
+        }
+
+        Ok(removed_bytes)
+    })
+    .await
+    .map_err(|err| format!("Failed to clear media cache: {err}"))?
+}
+
+#[tauri::command]
+pub async fn unlink_all_profile_accounts(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    profile_id: String,
+) -> Result<usize, String> {
+    profiles::ensure_profile_unlocked(&app, &state, &profile_id)?;
+
+    tokio::task::spawn_blocking(move || {
+        let mut target_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for p in registry::all_platforms() {
+            target_ids.insert(p.id().to_string());
+        }
+        for rec in crate::plugins::registry::load_installed_records(&app).unwrap_or_default() {
+            target_ids.insert(rec.id);
+        }
+
+        let count = target_ids.len();
+        for pid in target_ids {
+            let auth_modes = registry::find_platform(&pid)
+                .map(|platform| platform.auth_modes())
+                .unwrap_or_default();
+            vault::wipe_profile_platform_secrets(&profile_id, &pid, &auth_modes)?;
+        }
+        Ok(count)
+    })
+    .await
+    .map_err(|err| format!("Failed to unlink all accounts: {err}"))?
+}
+
+#[tauri::command]
+pub async fn factory_reset(
+    app: AppHandle,
+    state: State<'_, ProfileSessionState>,
+    desktop_state: State<'_, DesktopSettingsState>,
+) -> Result<ProfileInfo, String> {
+    let app_clone = app.clone();
+    let default_profile = tokio::task::spawn_blocking(move || {
+        let all_profiles = profiles::ensure_initialized(&app_clone).unwrap_or_default();
+        let installed =
+            crate::plugins::registry::load_installed_records(&app_clone).unwrap_or_default();
+
+        let mut platform_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for p in registry::all_platforms() {
+            platform_ids.insert(p.id().to_string());
+        }
+        for rec in installed {
+            platform_ids.insert(rec.id);
+        }
+
+        for profile in &all_profiles {
+            for pid in &platform_ids {
+                let auth_modes = registry::find_platform(pid)
+                    .map(|platform| platform.auth_modes())
+                    .unwrap_or_default();
+                let _ = vault::wipe_profile_platform_secrets(&profile.id, pid, &auth_modes);
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        vault::sweep_all_app_windows_credentials();
+
+        let _ = desktop::apply_launch_at_startup(false);
+        let default_desktop = DesktopSettings::default();
+        let _ =
+            desktop::apply_global_shortcut(&app_clone, default_desktop.global_shortcut.as_deref());
+
+        let data_dir = profiles::app_data_dir(&app_clone)?;
+        for file in ["profiles.json", "desktop_settings.json"] {
+            let path = data_dir.join(file);
+            if path.is_file() {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        for dir_name in ["profiles", "plugins", "cache", "media_cache"] {
+            let dir = data_dir.join(dir_name);
+            if dir.exists() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+
+        let _ = crate::plugins::reload_installed_plugins(&app_clone);
+        let fresh_profiles = profiles::ensure_initialized(&app_clone)?;
+        fresh_profiles
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Failed to reinitialise default profile.".to_string())
+    })
+    .await
+    .map_err(|err| format!("Factory reset failed: {err}"))??;
+
+    if let Ok(mut guard) = state.unlocked.lock() {
+        guard.clear();
+    }
+    if let Ok(mut guard) = desktop_state.0.lock() {
+        *guard = DesktopSettings::default();
+    }
+
+    Ok(ProfileInfo {
+        id: default_profile.id,
+        name: default_profile.name,
+        has_password: default_profile.has_password,
+        is_unlocked: true,
+        created_at: default_profile.created_at,
+    })
 }
 
 #[tauri::command]

@@ -348,6 +348,49 @@ fn sweep_windows_credentials(profile_id: &str, platform_id: &str) {
     }
 }
 
+/// Sweeps every SocialPoster keyring entry on Windows during a factory reset.
+#[cfg(target_os = "windows")]
+pub fn sweep_all_app_windows_credentials() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let Ok(output) = std::process::Command::new("cmdkey")
+        .arg("/list")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    else {
+        return;
+    };
+
+    if !output.status.success() {
+        return;
+    }
+
+    let service_lower = KEYRING_SERVICE.to_lowercase();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        let Some(rest) = trimmed.strip_prefix("Target:") else {
+            continue;
+        };
+        let raw_target = rest.trim();
+        let target = raw_target
+            .strip_prefix("LegacyGeneric:target=")
+            .or_else(|| raw_target.strip_prefix("Generic:target="))
+            .or_else(|| raw_target.strip_prefix("Domain:target="))
+            .unwrap_or(raw_target)
+            .trim();
+        let lower = target.to_lowercase();
+        if !target.is_empty() && (lower.contains(&service_lower) || lower.contains("socialposter"))
+        {
+            let _ = std::process::Command::new("cmdkey")
+                .arg(format!("/delete:{target}"))
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+        }
+    }
+}
+
 fn remaining_configured_identifiers(
     profile_id: &str,
     platform_id: &str,

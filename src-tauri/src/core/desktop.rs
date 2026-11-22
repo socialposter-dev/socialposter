@@ -13,6 +13,10 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 pub struct DesktopSettings {
     pub minimize_to_tray: bool,
     pub global_shortcut: Option<String>,
+    #[serde(default)]
+    pub developer_mode: bool,
+    #[serde(default)]
+    pub launch_at_startup: bool,
 }
 
 impl Default for DesktopSettings {
@@ -20,6 +24,8 @@ impl Default for DesktopSettings {
         Self {
             minimize_to_tray: true,
             global_shortcut: Some("CommandOrControl+Shift+Space".to_string()),
+            developer_mode: false,
+            launch_at_startup: false,
         }
     }
 }
@@ -150,4 +156,104 @@ pub fn apply_global_shortcut(app: &AppHandle, shortcut: Option<&str>) -> Result<
     }
 
     Ok(())
+}
+
+/// Enables or disables OS login autostart for SocialPoster.
+pub fn apply_launch_at_startup(enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+        const VALUE_NAME: &str = "SocialPoster";
+
+        if enabled {
+            let exe = std::env::current_exe()
+                .map_err(|err| format!("Failed to resolve executable path: {err}"))?;
+            let exe_quoted = format!("\"{}\"", exe.display());
+            let output = std::process::Command::new("reg")
+                .args([
+                    "add",
+                    RUN_KEY,
+                    "/v",
+                    VALUE_NAME,
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &exe_quoted,
+                    "/f",
+                ])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output()
+                .map_err(|err| format!("Failed to update Windows startup registry: {err}"))?;
+            if !output.status.success() {
+                return Err(format!(
+                    "Failed to enable startup entry: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+            }
+        } else {
+            let _ = std::process::Command::new("reg")
+                .args(["delete", RUN_KEY, "/v", VALUE_NAME, "/f"])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME")
+            .map_err(|_| "Unable to resolve HOME directory for autostart.".to_string())?;
+        let agents_dir = PathBuf::from(home).join("Library/LaunchAgents");
+        let plist_path = agents_dir.join("com.afuxy.socialposter.plist");
+        if enabled {
+            fs::create_dir_all(&agents_dir)
+                .map_err(|err| format!("Failed to create LaunchAgents directory: {err}"))?;
+            let exe = std::env::current_exe()
+                .map_err(|err| format!("Failed to resolve executable path: {err}"))?;
+            let plist = format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+                <plist version=\"1.0\">\n\
+                <dict>\n\
+                  <key>Label</key><string>com.afuxy.socialposter</string>\n\
+                  <key>ProgramArguments</key><array><string>{}</string></array>\n\
+                  <key>RunAtLoad</key><true/>\n\
+                </dict>\n\
+                </plist>\n",
+                exe.display()
+            );
+            fs::write(&plist_path, plist)
+                .map_err(|err| format!("Failed to write LaunchAgent plist: {err}"))?;
+        } else if plist_path.exists() {
+            let _ = fs::remove_file(&plist_path);
+        }
+        Ok(())
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let config_dir = std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".config")))
+            .map_err(|_| "Unable to resolve autostart config directory.".to_string())?;
+        let autostart_dir = config_dir.join("autostart");
+        let desktop_path = autostart_dir.join("socialposter.desktop");
+        if enabled {
+            fs::create_dir_all(&autostart_dir)
+                .map_err(|err| format!("Failed to create autostart directory: {err}"))?;
+            let exe = std::env::current_exe()
+                .map_err(|err| format!("Failed to resolve executable path: {err}"))?;
+            let content = format!(
+                "[Desktop Entry]\nType=Application\nName=SocialPoster\nExec=\"{}\"\nX-GNOME-Autostart-enabled=true\n",
+                exe.display()
+            );
+            fs::write(&desktop_path, content)
+                .map_err(|err| format!("Failed to write autostart desktop entry: {err}"))?;
+        } else if desktop_path.exists() {
+            let _ = fs::remove_file(&desktop_path);
+        }
+        Ok(())
+    }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "socialposter"
-version = "1.0.0"
+version = "1.1.0"
 description = "SocialPoster"
 authors = ["AFuxy"]
 repository = "https://github.com/socialposter-dev/socialposter"
