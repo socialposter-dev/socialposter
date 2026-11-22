@@ -46,4 +46,4 @@ npm run tauri build
 
 ## Licence
 
-Released under the [MIT Licence](https://www.google.com/search?q=LICENSE).
+SocialPoster is licensed under [PolyForm Noncommercial 1.0.0](LICENSE). Anyone is free to fork, inspect, and modify the source code for personal and non-commercial use, while all commercial rights remain reserved by the author.

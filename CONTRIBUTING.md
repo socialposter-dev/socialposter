@@ -40,3 +40,7 @@ cargo clippy -- -D warnings
 cargo test
 
 ```
+
+### Contributor Licence
+
+By submitting a pull request to this repository, you grant the project owner a perpetual, worldwide, irrevocable licence to use, modify, and distribute your contribution under both PolyForm Noncommercial 1.0.0 and any commercial terms chosen by the owner.
