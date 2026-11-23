@@ -5,7 +5,7 @@ description = "SocialPoster"
 authors = ["AFuxy"]
 license = "PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/socialposter-dev/socialposter"
-homepage = "https://github.com/socialposter-dev/socialposter"
+homepage = "https://socialposter.dev"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
