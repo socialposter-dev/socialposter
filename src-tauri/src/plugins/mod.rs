@@ -68,6 +68,14 @@ impl SocialPlatform for ArcWasmPlatform {
         self.0.verify_credentials(creds).await
     }
 
+    async fn start_oauth(
+        &self,
+        mode_id: &str,
+        inputs: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, String> {
+        self.0.start_oauth(mode_id, inputs).await
+    }
+
     async fn publish(
         &self,
         post: &PostPayload,

@@ -177,7 +177,11 @@ export function SettingsDialog({
     setIsAuthorising(true);
     setVerifyStatus(null);
     try {
-      await startPlatformOauth(profileId, platform.id, activeMode.id, values);
+      await startPlatformOauth(profileId, platform.id, activeMode.id, {
+        ...values,
+        __auth_mode: activeMode.id,
+      });
+      setLocalUnlinked(false);
       await onSaved();
       setVerifyStatus({
         ok: true,

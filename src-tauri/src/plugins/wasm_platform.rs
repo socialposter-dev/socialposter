@@ -61,6 +61,41 @@ struct WasmAuthField {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
+struct WasmOAuthConfig {
+    authorize_url: String,
+    token_url: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    preferred_port: Option<u16>,
+    #[serde(default = "default_true")]
+    use_pkce: bool,
+    #[serde(default)]
+    client_id: Option<String>,
+    #[serde(default)]
+    client_secret: Option<String>,
+    #[serde(default = "default_client_id_key")]
+    client_id_key: String,
+    #[serde(default = "default_client_secret_key")]
+    client_secret_key: String,
+    #[serde(default)]
+    instance_url_key: Option<String>,
+    #[serde(default)]
+    extra_authorize_params: HashMap<String, String>,
+    #[serde(default)]
+    extra_token_params: HashMap<String, String>,
+}
+
+fn default_client_id_key() -> String {
+    "client_id".to_string()
+}
+
+fn default_client_secret_key() -> String {
+    "client_secret".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
 struct WasmAuthMode {
     id: String,
     label: String,
@@ -70,6 +105,8 @@ struct WasmAuthMode {
     fields: Vec<WasmAuthField>,
     #[serde(default)]
     setup_instructions: Option<String>,
+    #[serde(default)]
+    oauth: Option<WasmOAuthConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -219,18 +256,18 @@ fn map_auth_field(field: &WasmAuthField) -> AuthField {
                 })
                 .collect(),
         },
-        "oauth" | "oauth_button" => FieldKind::OAuthButton {
+        "oauth" | "oauth_button" | "o_auth_button" => FieldKind::OAuthButton {
             button_label: Cow::Owned(
                 field
                     .button_label
                     .clone()
-                    .unwrap_or_else(|| "Connect".to_string()),
+                    .unwrap_or_else(|| "Connect Account".to_string()),
             ),
             target_key: Cow::Owned(
                 field
                     .target_key
                     .clone()
-                    .unwrap_or_else(|| field.key.clone()),
+                    .unwrap_or_else(|| "access_token".to_string()),
             ),
         },
         _ => FieldKind::Text,
@@ -655,19 +692,21 @@ fn build_host_functions(ctx: SandboxHostContext) -> Vec<Function> {
     let sp_sleep_ms = Function::new(
         "sp_sleep_ms",
         [PTR],
-        [PTR],
+        [],
         ud_sleep,
-        |plugin, inputs, outputs, user_data| {
-            let raw: String = plugin.memory_get_val(&inputs[0])?;
+        |_plugin, inputs, _outputs, user_data| {
+            let ms = match inputs.first() {
+                Some(extism::Val::I64(v)) => (*v).max(0) as u64,
+                _ => 0,
+            };
             let is_offline = user_data
                 .get()?
                 .lock()
                 .map(|guard| guard.offline)
                 .unwrap_or(true);
-            if !is_offline && let Ok(ms) = raw.trim().parse::<u64>() {
+            if !is_offline && ms > 0 {
                 std::thread::sleep(Duration::from_millis(ms.min(10_000)));
             }
-            plugin.memory_set_val(&mut outputs[0], "")?;
             Ok(())
         },
     )
@@ -921,6 +960,160 @@ impl SocialPlatform for WasmPlatform {
                 .error
                 .unwrap_or_else(|| "Credential verification failed.".to_string()))
         }
+    }
+
+    async fn start_oauth(
+        &self,
+        mode_id: &str,
+        inputs: &HashMap<String, String>,
+    ) -> Result<HashMap<String, String>, String> {
+        let mode = self
+            .describe
+            .auth_modes
+            .iter()
+            .find(|m| m.id == mode_id)
+            .ok_or_else(|| format!("Unknown authentication mode '{mode_id}'."))?;
+
+        let cfg = mode.oauth.as_ref().ok_or_else(|| {
+            format!("OAuth 2.0 is not configured for authentication mode '{mode_id}'.")
+        })?;
+
+        let resolve_url = |template: &str| -> Result<String, String> {
+            let mut out = template.trim().to_string();
+            if let Some(ref key) = cfg.instance_url_key {
+                let raw_instance = inputs
+                    .get(key.as_str())
+                    .map(|s| s.trim().trim_end_matches('/'))
+                    .unwrap_or("");
+                if out.contains("{instance_url}") && raw_instance.is_empty() {
+                    return Err(format!("Missing required field '{key}' for OAuth URL."));
+                }
+                out = out.replace("{instance_url}", raw_instance);
+            }
+            if !out.starts_with("https://") {
+                return Err(format!("OAuth URL must use https:// (got '{out}')."));
+            }
+            Ok(out)
+        };
+
+        let authorize_url_str = resolve_url(&cfg.authorize_url)?;
+        let token_url_str = resolve_url(&cfg.token_url)?;
+
+        let client_id = inputs
+            .get(&cfg.client_id_key)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                cfg.client_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+            })
+            .ok_or_else(|| format!("Missing OAuth client ID ('{}').", cfg.client_id_key))?;
+
+        let client_secret = inputs
+            .get(&cfg.client_secret_key)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                cfg.client_secret
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(ToString::to_string)
+            });
+
+        let (server, redirect_uri) = crate::core::oauth::bind_loopback(cfg.preferred_port)?;
+        let state = crate::core::oauth::generate_state()?;
+        let pkce = if cfg.use_pkce {
+            Some(crate::core::oauth::generate_pkce()?)
+        } else {
+            None
+        };
+
+        let mut auth_url = Url::parse(&authorize_url_str)
+            .map_err(|err| format!("Invalid OAuth authorise URL: {err}"))?;
+        {
+            let mut query = auth_url.query_pairs_mut();
+            query.append_pair("response_type", "code");
+            query.append_pair("client_id", &client_id);
+            query.append_pair("redirect_uri", &redirect_uri);
+            if !cfg.scopes.is_empty() {
+                query.append_pair("scope", &cfg.scopes.join(" "));
+            }
+            query.append_pair("state", &state);
+            if let Some(ref pair) = pkce {
+                query.append_pair("code_challenge", &pair.code_challenge);
+                query.append_pair("code_challenge_method", "S256");
+            }
+            for (k, v) in &cfg.extra_authorize_params {
+                query.append_pair(k, v);
+            }
+        }
+
+        open::that(auth_url.as_str())
+            .map_err(|err| format!("Failed to open browser for OAuth authorisation: {err}"))?;
+
+        let code = crate::core::oauth::wait_for_callback_code(
+            server,
+            Some(state),
+            Duration::from_secs(180),
+            &self.describe.display_name,
+            &self.describe.brand_colour,
+        )
+        .await?;
+
+        let extra_params: Vec<(String, String)> = cfg
+            .extra_token_params
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        let token_cfg = crate::core::oauth::OAuthTokenConfig {
+            client_id: client_id.clone(),
+            client_secret: client_secret.clone(),
+            token_url: token_url_str,
+            redirect_uri,
+            extra_params,
+        };
+        let verifier = pkce
+            .as_ref()
+            .map(|p| p.code_verifier.as_str())
+            .unwrap_or("");
+        let tokens = crate::core::oauth::exchange_code_for_tokens(
+            &reqwest::Client::new(),
+            &token_cfg,
+            &code,
+            verifier,
+        )
+        .await?;
+
+        let mut stored = HashMap::new();
+        for (k, v) in inputs {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                stored.insert(k.clone(), trimmed.to_string());
+            }
+        }
+        stored.insert("access_token".to_string(), tokens.access_token);
+        if let Some(refresh) = tokens.refresh_token.filter(|s| !s.trim().is_empty()) {
+            stored.insert("refresh_token".to_string(), refresh);
+        }
+        if let Some(token_type) = tokens.token_type.filter(|s| !s.trim().is_empty()) {
+            stored.insert("token_type".to_string(), token_type);
+        }
+        if let Some(expires_in) = tokens.expires_in {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            stored.insert(
+                "expires_at".to_string(),
+                (now_secs + expires_in).to_string(),
+            );
+        }
+
+        Ok(stored)
     }
 
     async fn publish(

@@ -151,7 +151,7 @@ export function SettingsOverlay({
   const [savingPassword, setSavingPassword] = useState(false);
 
   // About & Updates state
-  const [appVersion, setAppVersion] = useState("1.1.1");
+  const [appVersion, setAppVersion] = useState("1.2.0");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(
     availableUpdate ? "available" : "idle",
   );
